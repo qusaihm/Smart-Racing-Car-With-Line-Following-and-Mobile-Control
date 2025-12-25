@@ -1,0 +1,37 @@
+name: smart_line_follower
+description: "Smart Line Following Car Control App with Firebase Authentication and Path Recording"
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.9.2 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase Dependencies
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.3.0
+
+  # WebSocket for ESP32 Communication
+  web_socket_channel: ^2.4.0
+
+  # HTTP for additional network requests
+  http: ^1.1.0
+
+  # Icons
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  # تم حذف assets و fonts لتجنب أخطاء البناء
