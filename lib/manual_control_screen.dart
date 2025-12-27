@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'theme.dart';
-import 'settings_screen.dart';
 
 class _ControlCard extends StatelessWidget {
   final List<Widget> children;

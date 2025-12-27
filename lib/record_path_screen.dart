@@ -118,13 +118,12 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
   // Path data
   List<PathPoint> recordedPath = [];
   StreamSubscription? _webSocketSubscription;
+
   int _currentSpeed = 150;
   String _lastAction = 'STOP';
   String _currentStatus = 'Ready to record';
-  Timer? _simulationTimer;
-  final Random _random = Random();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance; // Firestore instance
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Format time (seconds to mm:ss)
   String _formatTime(int seconds) {
@@ -133,61 +132,10 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
     return '$minutes:$remainingSeconds';
   }
 
-  // Start simulation (for testing without ESP32)
-  void _startSimulation() {
-    print('🎮 Starting simulation mode');
-
-    _simulationTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) {
-      if (!_isRecording) {
-        timer.cancel();
-        return;
-      }
-
-      // Simulate sensor data
-      List<int> sensorValues = [
-        1500 + _random.nextInt(1000),
-        1600 + _random.nextInt(1000),
-        1200 + _random.nextInt(1000),
-        1700 + _random.nextInt(1000),
-        1800 + _random.nextInt(1000),
-      ];
-
-      // Determine action based on simulated sensors
-      String action = 'FORWARD';
-      if (sensorValues[1] < 1800) action = 'LEFT';
-      if (sensorValues[3] < 1800) action = 'RIGHT';
-      if (sensorValues[2] > 2200) action = 'STOP';
-
-      // Add point to recorded path
-      recordedPath.add(PathPoint(
-        timestamp: DateTime.now(),
-        speed: _currentSpeed,
-        action: action,
-        sensorValues: sensorValues,
-      ));
-
-      // Update statistics
-      _totalSpeedSum += _currentSpeed;
-      _speedReadings++;
-
-      setState(() {
-        if (action == 'LEFT' || action == 'RIGHT') {
-          _numberOfTurns++;
-        }
-        _averageSpeed = (_totalSpeedSum / _speedReadings) / 255 * 100;
-        _lastAction = action;
-        _currentStatus = 'Recording (Simulation) - ${recordedPath.length} points';
-      });
-
-      print('📊 Simulated point ${recordedPath.length}: $action');
-    });
-  }
-
   // Start recording
   Future<void> _startRecording() async {
     print('▶ Starting recording...');
 
-    // Reset all data first
     setState(() {
       _isRecording = true;
       _recordingTimeSeconds = 0;
@@ -196,61 +144,47 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
       _totalSpeedSum = 0;
       _speedReadings = 0;
       recordedPath.clear();
-      _currentStatus = 'Connecting...';
+      _currentStatus = 'Sending command...';
       _lastAction = 'STOP';
     });
 
-    // إعطاء وقت للتطبيق لتحديث واجهة المستخدم
-    await Future.delayed(const Duration(milliseconds: 200));
-
-    // إرسال أوامر البدء
     try {
-      // 🔴 الترتيب مهم: record_start أولاً، ثم start
       widget.channel.sink.add('record_start');
-      
-      // تأخير بسيط بين الأوامر
-      await Future.delayed(const Duration(milliseconds: 150));
-      
-      widget.channel.sink.add('start');
-      
-      print('📤 Commands sent: record_start → start');
+      print('📤 Command sent: record_start');
+
       setState(() {
-        _currentStatus = 'Commands sent, waiting for data...';
+      _currentStatus = 'Recording started – waiting for sensor data...';
       });
     } catch (e) {
-      print('❌ Failed to send start commands: $e');
+      print('❌ Failed to send record_start: $e');
       setState(() {
-        _currentStatus = 'Failed to send commands: $e';
+        _currentStatus = 'Command failed: $e';
         _isRecording = false;
       });
       return;
     }
 
-    // انتظر قليلاً للاستجابة من ESP
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    // بدء المؤقت
+    // Start timer
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
         _recordingTimeSeconds++;
       });
     });
 
-    // 🔴 استمع للرسائل من ESP
+    // Listen to WebSocket messages
     _webSocketSubscription = widget.channel.stream.listen((message) {
-      print('📩 Received from ESP: $message');
+      print('📩 Received: $message');
 
       if (!_isRecording) return;
 
-      // معالجة رسائل الحساسات
+      // Handle sensor data
       if (message.startsWith("SENSORS:")) {
         List<String> sensorStrs = message.substring(8).split(",");
-
         if (sensorStrs.length == 5) {
           List<int> sensorValues =
               sensorStrs.map((s) => int.tryParse(s) ?? 0).toList();
 
-          // أضف النقطة إلى المسار المسجل
+          // Add point
           recordedPath.add(PathPoint(
             timestamp: DateTime.now(),
             speed: _currentSpeed,
@@ -258,183 +192,144 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
             sensorValues: sensorValues,
           ));
 
-          // تحديث الإحصائيات
+          // Update stats
           _totalSpeedSum += _currentSpeed;
           _speedReadings++;
 
           setState(() {
-            _averageSpeed = (_totalSpeedSum / _speedReadings) / 255 * 100;
+            _averageSpeed = _speedReadings > 0
+                ? (_totalSpeedSum / _speedReadings) / 255 * 100
+                : 0.0;
+
             _currentStatus = "Recording (${recordedPath.length} points)";
-            
-            // عد المنعطفات تلقائياً
+
+            // Count turns based on current action
             if (_lastAction == 'LEFT' || _lastAction == 'RIGHT') {
               _numberOfTurns++;
             }
           });
 
-          print("✅ ADDED POINT #${recordedPath.length} | Action: $_lastAction | Speed: $_currentSpeed");
+          print("✅ Point #${recordedPath.length} | Action: $_lastAction | Speed: $_currentSpeed");
         }
       }
 
-      // معالجة ACTION
+      // Update action
       if (message.startsWith("ACTION:")) {
         _lastAction = message.substring(7);
-        print('🔄 Action updated: $_lastAction');
+        print('🔄 Action: $_lastAction');
       }
 
-      // معالجة SPEED
+      // Update speed
       if (message.startsWith("SPEED:")) {
         _currentSpeed = int.tryParse(message.substring(6)) ?? _currentSpeed;
-        print('⚡ Speed updated: $_currentSpeed');
+        print('⚡ Speed: $_currentSpeed');
       }
 
-      // معالجة MODE
+      // Update mode/status
       if (message.startsWith("MODE:")) {
         String mode = message.substring(5);
         setState(() {
-          _currentStatus = mode;
+          if (_currentStatus.startsWith('Waiting') || _currentStatus == 'Sending command...') {
+            _currentStatus = 'Recording (${recordedPath.length} points)';
+          }
         });
-        print('📝 Mode updated: $mode');
-      }
-    });
-
-    // 🔴 إضافة تأخير وهمي لاختبار الاستقبال
-    Timer(const Duration(seconds: 2), () {
-      if (recordedPath.isEmpty && _isRecording) {
-        print('⚠ Warning: No data received in first 2 seconds');
-        
-        // أضف نقطة تجريبية إذا لم يتم استقبال بيانات
-        recordedPath.add(PathPoint(
-          timestamp: DateTime.now(),
-          speed: _currentSpeed,
-          action: 'TEST',
-          sensorValues: [1500, 1600, 1700, 1800, 1900],
-        ));
-        
-        setState(() {
-          _totalSpeedSum += _currentSpeed;
-          _speedReadings++;
-          _averageSpeed = (_totalSpeedSum / _speedReadings) / 255 * 100;
-        });
-        
-        print('➕ Added test point for debugging');
+        print('📝 Mode: $mode');
       }
     });
   }
 
-  // Stop recording and save to Firestore (Global)
-  Future<void> _stopRecording() async {
-    // تأكد أننا نسجل فعلاً
+  // Stop recording and save
+ Future<void> _stopRecording() async {
     if (!_isRecording) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('⚠ Not currently recording'),
           backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
         ),
       );
       return;
     }
 
-    // إرسال أوامر الإيقاف أولاً
+    setState(() {
+      _currentStatus = 'Stopping robot...';
+    });
+
+    // 1. أرسل أوامر الإيقاف للـ ESP
     try {
-      // 🔴 الترتيب المعاكس: stop أولاً، ثم record_stop
-      widget.channel.sink.add('stop');
-      
-      await Future.delayed(const Duration(milliseconds: 150));
-      
       widget.channel.sink.add('record_stop');
-      
-      print('📤 Stop commands sent: stop → record_stop');
+      await Future.delayed(const Duration(milliseconds: 100));
+      widget.channel.sink.add('stop');
+      print('📤 Sent stop commands');
     } catch (e) {
       print('⚠ Failed to send stop commands: $e');
     }
 
-    // إيقاف المؤقتات والاشتراكات
+    // 2. إيقاف المؤقت
     _timer?.cancel();
-    _simulationTimer?.cancel();
+
+    setState(() {
+      _currentStatus = 'Waiting for remaining data...';
+    });
+
+    // 3. انتظر وقت كافي لاستقبال كل البيانات المتبقية (مهم جداً!)
+    await Future.delayed(const Duration(milliseconds: 1500)); // 1.5 ثانية كافية
+
+    // 4. إلغاء الاشتراك في الـ WebSocket
     await _webSocketSubscription?.cancel();
     _webSocketSubscription = null;
 
     setState(() {
       _isRecording = false;
-      _currentStatus = 'Processing data...';
+      _currentStatus = 'Finalizing data...';
     });
 
-    // انتظر لحظة لاستقبال أي بيانات متأخرة
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    // 🔴 إذا لم يكن هناك بيانات مسجلة، أضف بيانات تجريبية
+    // 5. لو لسة مفيش نقاط، أضف نقطة أخيرة يدوياً (للأمان)
     if (recordedPath.isEmpty) {
-      print('⚠ No data recorded, adding minimal path data');
-      
+      print('⚠ No points recorded, adding final fallback point');
       recordedPath.add(PathPoint(
         timestamp: DateTime.now(),
-        speed: 150,
+        speed: _currentSpeed,
         action: 'STOP',
         sensorValues: [2000, 2000, 2000, 2000, 2000],
       ));
-      
-      _totalSpeedSum = 150;
-      _speedReadings = 1;
-      _averageSpeed = 58.8; // 150/255*100 ≈ 58.8%
-      
-      print('➕ Added minimal path for Firestore');
+      _totalSpeedSum += _currentSpeed;
+      _speedReadings += 1;
     }
 
-    // حفظ المسار إلى Firestore
+    // 6. تحديث الإحصائيات النهائية
+    setState(() {
+      if (_speedReadings > 0) {
+        _averageSpeed = (_totalSpeedSum / _speedReadings) / 255 * 100;
+      }
+      _currentStatus = 'Saving path...';
+    });
+
+    // 7. حفظ في Firestore
     bool success = await _savePathToFirestore();
-    
+
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('✅ Path Saved Successfully! (${recordedPath.length} points)'),
+          content: Text('✅ Path saved successfully! (${recordedPath.length} points)'),
           backgroundColor: Colors.green,
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 4),
         ),
       );
-
       setState(() {
         _currentStatus = 'Saved ✓ (${recordedPath.length} points)';
       });
-
-      print('✅ Path saved to Firestore: ${recordedPath.length} points');
+      print('✅ Final saved points: ${recordedPath.length}');
     } else {
-      // خيار النسخ الاحتياطي المحلي
-      _saveLocalBackup();
-      
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('⚠ Saved locally (Firestore failed)'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 3),
+          content: Text('❌ Save failed – check internet/Firestore rules'),
+          backgroundColor: Colors.red,
         ),
       );
     }
   }
 
-  // Save local backup
-  void _saveLocalBackup() {
-    try {
-      final now = DateTime.now();
-      final formattedDate = '${now.year}-${now.month}-${now.day} ${now.hour}:${now.minute}';
-      
-      print('💾 Local backup saved: $formattedDate | Points: ${recordedPath.length}');
-      
-      // يمكنك إضافة حفظ محلي هنا (مثل shared_preferences)
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Backup saved locally: ${recordedPath.length} points'),
-          backgroundColor: Colors.blue,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      print('❌ Local backup failed: $e');
-    }
-  }
-
-  // Save path to Firestore (Global collection, no user fields)
+  // Save to Firestore
   Future<bool> _savePathToFirestore() async {
     try {
       String pathId = 'path_${DateTime.now().millisecondsSinceEpoch}';
@@ -448,16 +343,14 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
         'totalPoints': recordedPath.length,
         'averageSpeed': _averageSpeed.round(),
         'numberOfTurns': _numberOfTurns,
-        'isSimulated': false,
-        'pathPoints': recordedPath.map((point) => point.toMap()).toList(),
+        'pathPoints': recordedPath.map((p) => p.toMap()).toList(),
       };
 
-      print('💾 Saving to Firestore: $pathId, points=${recordedPath.length}, duration=${_recordingTimeSeconds}s');
       await _firestore.collection('recorded_paths').doc(pathId).set(pathData);
-      print('✅ Firestore save successful!');
+      print('✅ Saved to Firestore: ${recordedPath.length} points');
       return true;
     } catch (e) {
-      print('❌ Firestore error: $e');
+      print('❌ Firestore save failed: $e');
       return false;
     }
   }
@@ -472,41 +365,9 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
     );
   }
 
-  // Test Firestore write (global test)
-  Future<void> _testFirestoreConnection() async {
-    try {
-      String testId = 'test_${DateTime.now().millisecondsSinceEpoch}';
-      await _firestore.collection('recorded_paths').doc(testId).set({
-        'id': testId,
-        'test': true,
-        'createdAt': DateTime.now().toIso8601String(),
-        'message': 'Firestore connection test successful',
-        'totalPoints': 1,
-        'duration': 1,
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Firestore connection successful!'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ Firestore error: $e'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
-  }
-
   @override
   void dispose() {
     _timer?.cancel();
-    _simulationTimer?.cancel();
     _webSocketSubscription?.cancel();
     super.dispose();
   }
@@ -518,17 +379,10 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
         title: const Text('Record Path', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: backgroundColor,
         actions: [
-          // View Saved Paths button
           IconButton(
             onPressed: _navigateToSavedPaths,
-            icon: const Icon(Icons.history, color: Colors.white),
-            tooltip: 'View Saved Paths',
-          ),
-          // Test Firestore button
-          IconButton(
-            onPressed: _testFirestoreConnection,
-            icon: const Icon(Icons.cloud_upload, color: Colors.white),
-            tooltip: 'Test Firestore',
+            icon: const Icon(Icons.history),
+            tooltip: 'Saved Paths',
           ),
         ],
       ),
@@ -543,9 +397,7 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
               decoration: BoxDecoration(
                 color: _isRecording ? secondaryColor.withOpacity(0.1) : cardColor,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _isRecording ? secondaryColor : Colors.transparent,
-                ),
+                border: Border.all(color: _isRecording ? secondaryColor : Colors.transparent),
               ),
               child: Row(
                 children: [
@@ -566,21 +418,12 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          _currentStatus,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 14,
-                          ),
-                        ),
+                        Text(_currentStatus, style: const TextStyle(color: Colors.white70, fontSize: 14)),
                         if (_isRecording && recordedPath.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
                             'Points: ${recordedPath.length} | Speed: $_currentSpeed',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
                           ),
                         ],
                       ],
@@ -589,7 +432,6 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                 ],
               ),
             ),
-
             const SizedBox(height: 30),
 
             // Recording Circle
@@ -597,16 +439,9 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
               width: 200,
               height: 200,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [primaryColor, secondaryColor],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                gradient: const LinearGradient(colors: [primaryColor, secondaryColor]),
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: _isRecording ? tertiaryColor : primaryColor,
-                  width: 4,
-                ),
+                border: Border.all(color: _isRecording ? tertiaryColor : primaryColor, width: 4),
                 boxShadow: [
                   BoxShadow(
                     color: _isRecording ? secondaryColor.withOpacity(0.5) : Colors.transparent,
@@ -619,39 +454,19 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    _isRecording ? Icons.radio_button_checked : Icons.route,
-                    size: 60,
-                    color: Colors.white,
-                  ),
+                  Icon(_isRecording ? Icons.radio_button_checked : Icons.route, size: 60, color: Colors.white),
                   const SizedBox(height: 8),
                   Text(
                     _isRecording ? 'LIVE' : 'READY',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                    ),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
                   ),
                   if (_isRecording) ...[
                     const SizedBox(height: 8),
-                    Text(
-                      '$_recordingTimeSeconds s',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                  if (_isRecording && recordedPath.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      '${recordedPath.length} points',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                      ),
-                    ),
+                    Text('$_recordingTimeSeconds s', style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                    if (recordedPath.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text('${recordedPath.length} points', style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                    ],
                   ],
                 ],
               ),
@@ -665,18 +480,8 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _isRecording ? null : _startRecording,
-                    icon: Icon(
-                      Icons.fiber_manual_record,
-                      size: 24,
-                      color: _isRecording ? Colors.grey : Colors.white,
-                    ),
-                    label: Text(
-                      'START RECORDING',
-                      style: TextStyle(
-                        color: _isRecording ? Colors.grey : Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    icon: const Icon(Icons.fiber_manual_record, size: 24),
+                    label: const Text('START RECORDING', style: TextStyle(fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _isRecording ? Colors.grey.shade800 : secondaryColor,
                       padding: const EdgeInsets.symmetric(vertical: 18),
@@ -688,18 +493,8 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _isRecording ? _stopRecording : null,
-                    icon: Icon(
-                      Icons.stop,
-                      size: 24,
-                      color: _isRecording ? Colors.white : Colors.grey,
-                    ),
-                    label: Text(
-                      'STOP & SAVE',
-                      style: TextStyle(
-                        color: _isRecording ? Colors.white : Colors.grey,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    icon: const Icon(Icons.stop, size: 24),
+                    label: const Text('STOP & SAVE', style: TextStyle(fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _isRecording ? tertiaryColor : Colors.grey.shade800,
                       padding: const EdgeInsets.symmetric(vertical: 18),
@@ -709,33 +504,9 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                 ),
               ],
             ),
-
-            const SizedBox(height: 20),
-
-            // Quick Test Button (Simulation)
-            ElevatedButton.icon(
-              onPressed: () {
-                if (!_isRecording) {
-                  _startRecording();
-                  // توقف تلقائي بعد 5 ثواني
-                  Future.delayed(const Duration(seconds: 5), () {
-                    if (_isRecording) {
-                      _stopRecording();
-                    }
-                  });
-                }
-              },
-              icon: const Icon(Icons.play_arrow, size: 20),
-              label: const Text('Quick Test (5 seconds)'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.withOpacity(0.8),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
-            ),
-
             const SizedBox(height: 40),
 
-            // Firebase/Firestore Info
+            // Firestore Info
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -745,92 +516,43 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.cloud,
-                    color: primaryColor,
-                    size: 30,
-                  ),
+                  Icon(Icons.cloud, color: primaryColor, size: 30),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Firestore Storage',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        const Text('Firestore Storage', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 4),
                         StreamBuilder<QuerySnapshot>(
                           stream: _firestore.collection('recorded_paths').snapshots(),
                           builder: (context, snapshot) {
                             int count = snapshot.hasData ? snapshot.data!.docs.length : 0;
-                            return Text(
-                              'Total paths saved: $count',
-                              style: const TextStyle(color: Colors.white70),
-                            );
+                            return Text('Total saved paths: $count', style: const TextStyle(color: Colors.white70));
                           },
                         ),
                       ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: _navigateToSavedPaths,
-                    icon: Icon(Icons.arrow_forward, color: primaryColor),
-                  ),
+                  IconButton(onPressed: _navigateToSavedPaths, icon: Icon(Icons.arrow_forward, color: primaryColor)),
                 ],
               ),
             ),
             const SizedBox(height: 30),
 
-            // Statistics Title
-            const Text(
-              'RECORDING STATISTICS',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            // Statistics
+            const Text('RECORDING STATISTICS', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 20),
-
-            // Statistics Cards
-            _StatisticCard(
-              icon: Icons.turn_right,
-              label: 'Number of Turns',
-              value: _numberOfTurns.toString(),
-              color: primaryColor.withOpacity(0.7),
-            ),
+            _StatisticCard(icon: Icons.turn_right, label: 'Number of Turns', value: _numberOfTurns.toString(), color: primaryColor.withOpacity(0.7)),
             const SizedBox(height: 16),
-
-            _StatisticCard(
-              icon: Icons.timer,
-              label: 'Recording Time',
-              value: _formatTime(_recordingTimeSeconds),
-              color: secondaryColor.withOpacity(0.7),
-            ),
+            _StatisticCard(icon: Icons.timer, label: 'Recording Time', value: _formatTime(_recordingTimeSeconds), color: secondaryColor.withOpacity(0.7)),
             const SizedBox(height: 16),
-
-            _StatisticCard(
-              icon: Icons.speed,
-              label: 'Average Speed',
-              value: '${_averageSpeed.round()}%',
-              color: tertiaryColor.withOpacity(0.7),
-            ),
-
+            _StatisticCard(icon: Icons.speed, label: 'Average Speed', value: '${_averageSpeed.round()}%', color: tertiaryColor.withOpacity(0.7)),
             if (recordedPath.isNotEmpty) ...[
               const SizedBox(height: 16),
-              _StatisticCard(
-                icon: Icons.analytics,
-                label: 'Total Points',
-                value: recordedPath.length.toString(),
-                color: Colors.purple.withOpacity(0.7),
-              ),
+              _StatisticCard(icon: Icons.analytics, label: 'Total Points', value: recordedPath.length.toString(), color: Colors.purple.withOpacity(0.7)),
             ],
-
-            const SizedBox(height: 30),
+            const SizedBox(height: 40),
 
             // Info Box
             Container(
@@ -847,33 +569,23 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                     children: [
                       Icon(Icons.info_outline, color: primaryColor, size: 20),
                       SizedBox(width: 8),
-                      Text(
-                        'Recording Info',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      Text('Recording Info', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _isRecording 
-                      ? '• Recording active - ${recordedPath.length} points captured\n'
-                        '• Data will auto-save to Firestore when stopped\n'
-                        '• View saved paths using the history button above'
-                      : '• Click START to begin recording path\n'
-                        '• Data is automatically saved to Firestore when stopped\n'
-                        '• Works with or without ESP32 connection',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                    ),
+                    _isRecording
+                        ? '• Recording in progress - ${recordedPath.length} points captured\n'
+                          '• Data will be saved to Firestore when you stop\n'
+                          '• View saved paths via the history button'
+                        : '• Press START RECORDING to begin\n'
+                          '• The robot will follow the line and record every movement\n'
+                          '• All data is automatically saved to the cloud',
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ],
               ),
             ),
-
             const SizedBox(height: 40),
           ],
         ),

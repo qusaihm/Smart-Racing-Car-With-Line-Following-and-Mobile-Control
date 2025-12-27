@@ -15,10 +15,10 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  bool _isConnected = true;
-  int _batteryLevel = 85;
-  bool _isEngineRunning = false;
-  String _drivingMode = 'Manual';
+  final bool _isConnected = true;
+  final int _batteryLevel = 85;
+  final bool _isEngineRunning = false;
+  final String _drivingMode = 'Manual';
 
   // ------------------------------
   // Status Card (Battery / Engine / Mode)

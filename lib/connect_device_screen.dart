@@ -42,14 +42,13 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
       (message) {
         print("📩 ESP32: $message");
 
-        if (message == "Connected") {
-          setState(() {
-            isConnected = true;
-            isLoading = false;
-          });
-
-          _showSnackBar('✅ Connected to ESP32', Colors.green);
-        }
+        if (message.contains("CONNECTED:ESP32_READY")) {
+                  setState(() {
+                    isConnected = true;
+                    isLoading = false;
+                    });
+                     _showSnackBar('✅ Connected to ESP32', Colors.green);
+                   }
       },
       onDone: () {
         setState(() {

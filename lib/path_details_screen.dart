@@ -48,7 +48,7 @@ class PathDetailsScreen extends StatelessWidget {
                   SizedBox(height: 12),
 
                   Text("Duration:", style: TextStyle(color: Colors.white54)),
-                  Text("${_formatDuration(duration)}", style: TextStyle(color: Colors.white)),
+                  Text(_formatDuration(duration), style: TextStyle(color: Colors.white)),
                   SizedBox(height: 12),
 
                   Text("Turns:", style: TextStyle(color: Colors.white54)),
