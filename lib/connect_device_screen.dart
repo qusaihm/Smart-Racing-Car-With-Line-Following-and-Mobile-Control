@@ -1,8 +1,11 @@
+ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as status;
+
 import 'theme.dart';
 import 'dashboard_screen.dart';
+import 'ws_connection.dart';
 
 class ConnectDeviceScreen extends StatefulWidget {
   const ConnectDeviceScreen({super.key});
@@ -12,12 +15,15 @@ class ConnectDeviceScreen extends StatefulWidget {
 }
 
 class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
-  WebSocketChannel? channel;
+  WsConnection? connection;
+
   bool isConnected = false;
   String ipAddress = "192.168.1.1";
   final int port = 81;
   final TextEditingController _ipController = TextEditingController();
   bool isLoading = false;
+
+  StreamSubscription? _connectSub;
 
   @override
   void initState() {
@@ -25,72 +31,98 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
     _ipController.text = ipAddress;
   }
 
-  void connectToESP() async {
-  if (channel != null) {
-    await channel!.sink.close();
-  }
+  Future<void> connectToESP() async {
+    // ✅ Close old connection if exists
+    if (connection != null) {
+      try {
+        await _connectSub?.cancel();
+        await connection!.close(status.goingAway);
+      } catch (_) {}
+      connection = null;
+    }
 
-  setState(() => isLoading = true);
+    setState(() => isLoading = true);
 
-  try {
-    final uri = Uri.parse('ws://$ipAddress:$port');
-    print("🔌 Connecting to $uri");
+    try {
+      final uri = Uri.parse('ws://$ipAddress:$port');
+      print("🔌 Connecting to $uri");
 
-    channel = WebSocketChannel.connect(uri);
+      final ch = WebSocketChannel.connect(uri);
+      final conn = WsConnection(channel: ch);
 
-    channel!.stream.listen(
-      (message) {
-        print("📩 ESP32: $message");
+      // ✅ Listen to handshake / status using broadcast stream
+      _connectSub = conn.stream.listen(
+        (message) {
+          final msg = message.toString();
+          print("📩 ESP32: $msg");
 
-        if (message.contains("CONNECTED:ESP32_READY")) {
-                  setState(() {
-                    isConnected = true;
-                    isLoading = false;
-                    });
-                     _showSnackBar('✅ Connected to ESP32', Colors.green);
-                   }
-      },
-      onDone: () {
-        setState(() {
-          isConnected = false;
-          isLoading = false;
-        });
-        _showSnackBar('⚠ Connection closed', Colors.orange);
-      },
-      onError: (error) {
-        setState(() {
-          isConnected = false;
-          isLoading = false;
-        });
-        _showSnackBar('❌ Connection error', Colors.red);
-      },
-    );
+          if (msg.contains("CONNECTED:ESP32_READY")) {
+            if (!mounted) return;
+            setState(() {
+              isConnected = true;
+              isLoading = false;
+              connection = conn;
+            });
+            _showSnackBar('✅ Connected to ESP32', Colors.green);
 
-  } catch (e) {
-    setState(() {
-      isConnected = false;
-      isLoading = false;
-    });
-    _showSnackBar('❌ Failed to connect', Colors.red);
-  }
-}
-
-  void disconnectFromESP() {
-    if (channel != null) {
-      channel!.sink.close(status.goingAway);
+            // ✅ Optional: ask for status right after connect
+            try {
+              conn.send("get_status");
+            } catch (_) {}
+          }
+        },
+        onDone: () {
+          if (!mounted) return;
+          setState(() {
+            isConnected = false;
+            isLoading = false;
+            connection = null;
+          });
+          _showSnackBar('⚠ Connection closed', Colors.orange);
+        },
+        onError: (error) {
+          if (!mounted) return;
+          setState(() {
+            isConnected = false;
+            isLoading = false;
+            connection = null;
+          });
+          _showSnackBar('❌ Connection error', Colors.red);
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
         isConnected = false;
         isLoading = false;
+        connection = null;
+      });
+      _showSnackBar('❌ Failed to connect: $e', Colors.red);
+    }
+  }
+
+  Future<void> disconnectFromESP() async {
+    if (connection != null) {
+      try {
+        await _connectSub?.cancel();
+        await connection!.close(status.goingAway);
+      } catch (_) {}
+
+      if (!mounted) return;
+      setState(() {
+        isConnected = false;
+        isLoading = false;
+        connection = null;
       });
       _showSnackBar('🔌 Disconnected from ESP32', Colors.blue);
     }
   }
 
   void _goToDashboard() {
-    if (channel != null && isConnected) {
+    if (connection != null && isConnected) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (context) => DashboardScreen(channel: channel!),
+          builder: (context) => DashboardScreen(connection: connection!),
         ),
       );
     } else {
@@ -103,7 +135,7 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
       SnackBar(
         content: Text(message),
         backgroundColor: color,
-        duration: Duration(seconds: 3),
+        duration: const Duration(seconds: 3),
       ),
     );
   }
@@ -111,6 +143,8 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
   @override
   void dispose() {
     _ipController.dispose();
+    _connectSub?.cancel();
+    // ✅ لا تغلق connection هنا لأنك ممكن تنتقل للـ Dashboard وهي لسه مستخدمة
     super.dispose();
   }
 
@@ -118,7 +152,8 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Connect Device', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Connect Device',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: backgroundColor,
       ),
       body: Padding(
@@ -129,19 +164,19 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
             Text(
               'Connect to Your Car',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontSize: 28,
-                color: primaryColor,
-              ),
+                    fontSize: 28,
+                    color: primaryColor,
+                  ),
             ),
-            SizedBox(height: 8),
-            Text(
+            const SizedBox(height: 8),
+            const Text(
               'Enter your car\'s IP address to establish connection',
               style: TextStyle(
                 color: Colors.white70,
                 fontSize: 16,
               ),
             ),
-            SizedBox(height: 40),
+            const SizedBox(height: 40),
 
             TextField(
               controller: _ipController,
@@ -154,28 +189,29 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
                 ),
                 filled: true,
                 fillColor: cardColor,
-                prefixIcon: Icon(Icons.computer, color: secondaryColor),
-                labelStyle: TextStyle(color: Colors.white70),
-                hintStyle: TextStyle(color: Colors.white54),
+                prefixIcon: const Icon(Icons.computer, color: secondaryColor),
+                labelStyle: const TextStyle(color: Colors.white70),
+                hintStyle: const TextStyle(color: Colors.white54),
               ),
-              style: TextStyle(color: Colors.white, fontSize: 16),
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               onChanged: (value) {
                 setState(() {
                   ipAddress = value.trim();
                 });
               },
             ),
-            SizedBox(height: 20),
+
+            const SizedBox(height: 20),
 
             Container(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: primaryColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: primaryColor.withOpacity(0.3)),
               ),
-              child: Row(
+              child: const Row(
                 children: [
                   Icon(Icons.info_outline, color: primaryColor, size: 20),
                   SizedBox(width: 12),
@@ -191,12 +227,15 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
                 ],
               ),
             ),
-            SizedBox(height: 30),
+
+            const SizedBox(height: 30),
 
             ElevatedButton.icon(
-              onPressed: isLoading ? null : (isConnected ? disconnectFromESP : connectToESP),
+              onPressed: isLoading
+                  ? null
+                  : (isConnected ? disconnectFromESP : connectToESP),
               icon: isLoading
-                  ? SizedBox(
+                  ? const SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
@@ -209,7 +248,7 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
                       size: 24,
                     ),
               label: isLoading
-                  ? Text('Connecting...')
+                  ? const Text('Connecting...')
                   : Text(isConnected ? 'Disconnect' : 'Connect to Device'),
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 56),
@@ -223,11 +262,11 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
             ),
 
             if (isConnected) ...[
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
               ElevatedButton.icon(
                 onPressed: _goToDashboard,
-                icon: Icon(Icons.dashboard, color: Colors.white, size: 24),
-                label: Text('Go to Dashboard'),
+                icon: const Icon(Icons.dashboard, color: Colors.white, size: 24),
+                label: const Text('Go to Dashboard'),
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 56),
                   backgroundColor: secondaryColor,
@@ -238,12 +277,12 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
               ),
             ],
 
-            SizedBox(height: 30),
+            const SizedBox(height: 30),
 
             if (isConnected || isLoading) ...[
               Center(
                 child: Container(
-                  padding: EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: isConnected
                         ? secondaryColor.withOpacity(0.1)
@@ -260,7 +299,7 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
                         isConnected ? Icons.check_circle : Icons.sync,
                         color: isConnected ? secondaryColor : primaryColor,
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Text(
                         isConnected ? 'Connected Successfully' : 'Connecting...',
                         style: TextStyle(
@@ -274,9 +313,9 @@ class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
               ),
             ],
 
-            Spacer(),
+            const Spacer(),
 
-            Column(
+            const Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(

@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
+ import 'package:flutter/material.dart';
+import 'dart:async';
 import 'theme.dart';
+import 'ws_connection.dart';
 
 class _ControlCard extends StatelessWidget {
   final List<Widget> children;
@@ -23,9 +24,9 @@ class _ControlCard extends StatelessWidget {
 }
 
 class ManualControlScreen extends StatefulWidget {
-  final WebSocketChannel channel;
+  final WsConnection connection;
 
-  const ManualControlScreen({super.key, required this.channel});
+  const ManualControlScreen({super.key, required this.connection});
 
   @override
   State<ManualControlScreen> createState() => _ManualControlScreenState();
@@ -36,38 +37,45 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
   bool _isEngineRunning = false;
   final int _batteryLevel = 85;
   bool _isConnected = true;
-  int _currentSpeed = 150; // السرعة الفعلية المرسلة للـ ESP
 
+  int _currentSpeed = 150; // السرعة الفعلية المرسلة للـ ESP
   double get _simulatedSpeedKmH => (_currentSpeed * 0.07).clamp(0, 7);
 
-  void _sendCommand(String command) {
-    if (_isConnected) {
-      try {
-        widget.channel.sink.add(command);
-        print('📤 Sent Command: $command');
+  StreamSubscription? _wsSub;
+
+  void _sendCommand(String command, {bool showToast = true}) {
+    if (!_isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Not connected to device'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      widget.connection.send(command);
+      print('📤 Sent Command: $command');
+
+      if (showToast) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Command Sent: $command'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 1),
-            )
-        );
-      } catch (e) {
-        print('❌ Error sending command: $e');
-        setState(() => _isConnected = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Connection Lost: $e'),
-              backgroundColor: Colors.red,
-            )
+          SnackBar(
+            content: Text('Command Sent: $command'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 1),
+          ),
         );
       }
-    } else {
+    } catch (e) {
+      print('❌ Error sending command: $e');
+      if (!mounted) return;
+      setState(() => _isConnected = false);
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Not connected to device'),
-            backgroundColor: Colors.orange,
-          )
+        SnackBar(
+          content: Text('Connection Lost: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
 
@@ -79,83 +87,90 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
     }
   }
 
-  void _updateSpeed(double value) {
+  // ✅ تحديث الـ UI فقط أثناء السحب (بدون إرسال)
+  void _updateSpeedUI(double value) {
     setState(() {
       _currentSpeedPercentage = value;
-      // تحويل النسبة المئوية إلى قيمة سرعة بين 0-255
-      _currentSpeed = ((value / 100) * 255).round();
+      _currentSpeed = ((value / 100) * 255).round().clamp(0, 255);
     });
+  }
 
-    // إرسال أمر السرعة فوراً عند التغيير
-    _sendCommand('speed:$_currentSpeed');
+  // ✅ إرسال السرعة فقط عند الإفلات (أو preset)
+  void _sendSpeedToESP() {
+    _sendCommand('speed:$_currentSpeed', showToast: false);
   }
 
   @override
   void initState() {
     super.initState();
 
-    try {
-      Future.delayed(Duration(milliseconds: 100), () {
-        if (mounted) {
-          widget.channel.stream.listen(
-                (message) {
-              print("📩 Message from ESP32: $message");
-              if (mounted) {
-                setState(() {
-                  _isConnected = true;
-                });
+    // ✅ Listener واحد على broadcast stream
+    _wsSub = widget.connection.stream.listen(
+      (message) {
+        final msg = message.toString();
+        print("📩 Message from ESP32: $msg");
 
-                // معالجة الرسائل الواردة من الـ ESP32
-                if (message == "Connected") {
-                  setState(() => _isConnected = true);
-                } else if (message.startsWith("MODE:")) {
-                  setState(() {
-                    _isEngineRunning = message.contains("Started");
-                  });
-                } else if (message.startsWith("SPEED:")) {
-                  // تحديث السرعة عند استلام تأكيد من الـ ESP32
-                  try {
-                    int newSpeed = int.tryParse(message.split(":")[1]) ?? _currentSpeed;
-                    setState(() {
-                      _currentSpeed = newSpeed;
-                      _currentSpeedPercentage = ((newSpeed / 255) * 100).roundToDouble();
-                    });
-                  } catch (e) {
-                    print('❌ Error parsing speed: $e');
-                  }
-                }
-              }
-            },
-            onDone: () {
-              print("Connection closed by server");
-              if (mounted) {
-                setState(() => _isConnected = false);
-              }
-            },
-            onError: (error) {
-              print("Connection error: $error");
-              if (mounted) {
-                setState(() => _isConnected = false);
-              }
-            },
-          );
+        if (!mounted) return;
+        setState(() => _isConnected = true);
+
+        // رسائل ESP32 اللي بتهمنا
+        if (msg.startsWith("MODE:")) {
+          // انت عندك MODE: "Line Following" / "Recording Path" ... الخ
+          // ما رح نربطها مباشرة بـ engine running، خلّيها بسيطة:
+        } else if (msg.startsWith("ACTION:")) {
+          // ممكن تستفيد منها لاحقًا
+        } else if (msg.startsWith("SPEED:")) {
+          // تحديث السرعة من ESP (تأكيد)
+          final newSpeed = int.tryParse(msg.substring(6).trim());
+          if (newSpeed != null) {
+            setState(() {
+              _currentSpeed = newSpeed.clamp(0, 255);
+              _currentSpeedPercentage =
+                  ((_currentSpeed / 255) * 100).clamp(0, 100);
+            });
+          }
+        } else if (msg.contains("CONNECTED:ESP32_READY")) {
+          setState(() => _isConnected = true);
         }
-      });
-    } catch (e) {
-      print("❌ Error setting up stream listener: $e");
-    }
+      },
+      onDone: () {
+        print("⚠ Connection closed by server");
+        if (!mounted) return;
+        setState(() => _isConnected = false);
+      },
+      onError: (error) {
+        print("❌ Connection error: $error");
+        if (!mounted) return;
+        setState(() => _isConnected = false);
+      },
+    );
+
+    // ✅ اطلب status أول ما تفتح الشاشة (اختياري بس مفيد)
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      try {
+        widget.connection.send('get_status');
+      } catch (_) {}
+    });
+  }
+
+  @override
+  void dispose() {
+    _wsSub?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Remote Control', style: TextStyle(fontWeight: FontWeight.bold)),
+        title:
+            const Text('Remote Control', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: backgroundColor,
         actions: [
           IconButton(
             onPressed: () => Navigator.pushNamed(context, '/settings'),
-            icon: Icon(Icons.settings, color: Colors.white),
+            icon: const Icon(Icons.settings, color: Colors.white),
           ),
         ],
       ),
@@ -164,12 +179,13 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-
             // Connection Status
             Container(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: _isConnected ? secondaryColor.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                color: _isConnected
+                    ? secondaryColor.withOpacity(0.1)
+                    : Colors.red.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: _isConnected ? secondaryColor : Colors.red,
@@ -182,7 +198,7 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                     _isConnected ? Icons.wifi : Icons.wifi_off,
                     color: _isConnected ? secondaryColor : Colors.red,
                   ),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Text(
                     _isConnected ? 'Connected to Device' : 'Disconnected',
                     style: TextStyle(
@@ -194,47 +210,54 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                 ],
               ),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
 
-            Text('Remote Control',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            Text(
+              'Remote Control',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     color: Colors.white,
-                    fontWeight: FontWeight.bold
-                )),
-            SizedBox(height: 30),
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 30),
 
             // 🚗 ENGINE CONTROL BUTTON
             _ControlCard(
               children: [
-                Text('Engine Control',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
-                SizedBox(height: 15),
+                const Text('Engine Control',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: Colors.white)),
+                const SizedBox(height: 15),
                 ElevatedButton.icon(
                   onPressed: _isConnected
-                      ? () {
-                    _sendCommand(_isEngineRunning ? 'stop' : 'start');
-                  }
+                      ? () => _sendCommand(_isEngineRunning ? 'stop' : 'start')
                       : null,
                   icon: Icon(
-                    _isEngineRunning ? Icons.power_settings_new : Icons.play_arrow,
+                    _isEngineRunning
+                        ? Icons.power_settings_new
+                        : Icons.play_arrow,
                     size: 28,
                     color: Colors.white,
                   ),
                   label: Text(
                     _isEngineRunning ? 'STOP Engine' : 'START Engine',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _isEngineRunning ? tertiaryColor : secondaryColor,
+                    backgroundColor:
+                        _isEngineRunning ? tertiaryColor : secondaryColor,
                     foregroundColor: Colors.white,
-                    minimumSize: Size(double.infinity, 70),
+                    minimumSize: const Size(double.infinity, 70),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     elevation: 3,
                   ),
                 ),
-                SizedBox(height: 10),
+                const SizedBox(height: 10),
                 Text(
                   _isEngineRunning
                       ? '🟢 Engine is running - Car is active'
@@ -247,7 +270,8 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                 ),
               ],
             ),
-            SizedBox(height: 30),
+
+            const SizedBox(height: 30),
 
             // 🎚 SPEED CONTROL SECTION
             _ControlCard(
@@ -255,37 +279,37 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Speed Control',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+                    const Text('Speed Control',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: Colors.white)),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
                           '${_currentSpeedPercentage.round()}%',
-                          style: TextStyle(
+                          style: const TextStyle(
                               color: primaryColor,
                               fontWeight: FontWeight.bold,
-                              fontSize: 20
-                          ),
+                              fontSize: 20),
                         ),
                         Text(
                           '$_currentSpeed/255',
-                          style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14
-                          ),
+                          style:
+                              const TextStyle(color: Colors.white70, fontSize: 14),
                         ),
                       ],
                     ),
                   ],
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
 
-                // Speed Slider
+                // ✅ Slider: UI update only أثناء السحب + إرسال عند الإفلات
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
                     trackHeight: 12.0,
-                    thumbShape: RoundSliderThumbShape(
+                    thumbShape: const RoundSliderThumbShape(
                       enabledThumbRadius: 14.0,
                       disabledThumbRadius: 10.0,
                     ),
@@ -300,28 +324,35 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                     value: _currentSpeedPercentage,
                     min: 0,
                     max: 100,
-                    divisions: 20, // 5% increments
+                    divisions: 20,
                     label: '${_currentSpeedPercentage.round()}%',
-                    onChanged: _isConnected ? (double value) {
-                      _updateSpeed(value);
-                    } : null,
+                    onChanged: _isConnected ? _updateSpeedUI : null,
+                    onChangeEnd: _isConnected
+                        ? (v) {
+                            _updateSpeedUI(v);
+                            _sendSpeedToESP();
+                          }
+                        : null,
                   ),
                 ),
 
-                // Speed Percentage Labels
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('0%', style: TextStyle(fontSize: 14, color: Colors.white70)),
-                    Text('25%', style: TextStyle(fontSize: 14, color: Colors.white70)),
-                    Text('50%', style: TextStyle(fontSize: 14, color: Colors.white70)),
-                    Text('75%', style: TextStyle(fontSize: 14, color: Colors.white70)),
-                    Text('100%', style: TextStyle(fontSize: 14, color: Colors.white70)),
+                  children: const [
+                    Text('0%',
+                        style: TextStyle(fontSize: 14, color: Colors.white70)),
+                    Text('25%',
+                        style: TextStyle(fontSize: 14, color: Colors.white70)),
+                    Text('50%',
+                        style: TextStyle(fontSize: 14, color: Colors.white70)),
+                    Text('75%',
+                        style: TextStyle(fontSize: 14, color: Colors.white70)),
+                    Text('100%',
+                        style: TextStyle(fontSize: 14, color: Colors.white70)),
                   ],
                 ),
-                SizedBox(height: 15),
+                const SizedBox(height: 15),
 
-                // Speed Preset Buttons
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
@@ -331,18 +362,26 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                     _buildSpeedPresetButton('Max', 100),
                   ],
                 ),
+                const SizedBox(height: 10),
+                Text(
+                  'Simulated: ${_simulatedSpeedKmH.toStringAsFixed(1)} km/h',
+                  style: const TextStyle(color: Colors.white70),
+                )
               ],
             ),
-            SizedBox(height: 30),
+
+            const SizedBox(height: 30),
 
             // 📊 VEHICLE STATUS
             _ControlCard(
               children: [
-                Text('Vehicle Status',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
-                SizedBox(height: 20),
+                const Text('Vehicle Status',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: Colors.white)),
+                const SizedBox(height: 20),
 
-                // Engine Status
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -352,19 +391,24 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                           width: 12,
                           height: 12,
                           decoration: BoxDecoration(
-                            color: _isEngineRunning ? secondaryColor : tertiaryColor,
+                            color:
+                                _isEngineRunning ? secondaryColor : tertiaryColor,
                             shape: BoxShape.circle,
                           ),
                         ),
-                        SizedBox(width: 12),
+                        const SizedBox(width: 12),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Engine Status', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                            const Text('Engine Status',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 14)),
                             Text(
                               _isEngineRunning ? 'RUNNING' : 'STOPPED',
                               style: TextStyle(
-                                color: _isEngineRunning ? secondaryColor : tertiaryColor,
+                                color: _isEngineRunning
+                                    ? secondaryColor
+                                    : tertiaryColor,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
                               ),
@@ -373,17 +417,17 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                         ),
                       ],
                     ),
-
-                    // Battery Status
                     Row(
                       children: [
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('Battery Level', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                            const Text('Battery Level',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 14)),
                             Text(
                               '$_batteryLevel%',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 color: secondaryColor,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
@@ -391,25 +435,27 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                             ),
                           ],
                         ),
-                        SizedBox(width: 8),
-                        Icon(Icons.battery_full, color: secondaryColor, size: 24),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.battery_full,
+                            color: secondaryColor, size: 24),
                       ],
                     ),
                   ],
                 ),
 
-                SizedBox(height: 20),
-                Divider(color: Colors.white24),
-                SizedBox(height: 15),
+                const SizedBox(height: 20),
+                const Divider(color: Colors.white24),
+                const SizedBox(height: 15),
 
-                // Connection & Speed Status
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Connection', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                        const Text('Connection',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 14)),
                         Text(
                           _isConnected ? 'ACTIVE' : 'LOST',
                           style: TextStyle(
@@ -419,14 +465,15 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                         ),
                       ],
                     ),
-
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text('Current Speed', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                        const Text('Current Speed',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 14)),
                         Text(
                           '$_currentSpeed',
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: primaryColor,
                             fontWeight: FontWeight.bold,
                           ),
@@ -438,17 +485,16 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
               ],
             ),
 
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
 
-            // ℹ INFORMATION SECTION
             Container(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: primaryColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: primaryColor.withOpacity(0.3)),
               ),
-              child: Row(
+              child: const Row(
                 children: [
                   Icon(Icons.info_outline, color: primaryColor, size: 20),
                   SizedBox(width: 12),
@@ -464,8 +510,6 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                 ],
               ),
             ),
-
-            SizedBox(height: 20),
           ],
         ),
       ),
@@ -475,18 +519,21 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
   // زر السرعة المسبقة الإعداد
   Widget _buildSpeedPresetButton(String label, int speedPercentage) {
     return ElevatedButton(
-      onPressed: _isConnected ? () {
-        _updateSpeed(speedPercentage.toDouble());
-      } : null,
+      onPressed: _isConnected
+          ? () {
+              _updateSpeedUI(speedPercentage.toDouble());
+              _sendSpeedToESP();
+            }
+          : null,
       style: ElevatedButton.styleFrom(
         backgroundColor: primaryColor.withOpacity(0.8),
         foregroundColor: Colors.white,
-        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        minimumSize: Size(60, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        minimumSize: const Size(60, 40),
       ),
       child: Text(
         label,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
       ),
     );
   }

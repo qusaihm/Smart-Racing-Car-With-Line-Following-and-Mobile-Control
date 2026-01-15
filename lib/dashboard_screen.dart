@@ -1,21 +1,22 @@
-import 'package:flutter/material.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
+ import 'package:flutter/material.dart';
 import 'theme.dart';
+
+import 'ws_connection.dart';
 import 'manual_control_screen.dart';
 import 'record_path_screen.dart';
 import 'settings_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
-  final WebSocketChannel channel;
+  final WsConnection connection;
 
-  const DashboardScreen({super.key, required this.channel});
+  const DashboardScreen({super.key, required this.connection});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final bool _isConnected = true;
+  final bool _isConnected = true; // ممكن لاحقًا تربطها بستريم
   final int _batteryLevel = 85;
   final bool _isEngineRunning = false;
   final String _drivingMode = 'Manual';
@@ -51,7 +52,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-
       child: title == "Battery Level"
           ? Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -69,9 +69,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   child: Icon(icon, color: color, size: 38),
                 ),
-
                 const SizedBox(height: 14),
-
                 Text(
                   value,
                   style: TextStyle(
@@ -105,9 +103,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   child: Icon(icon, color: color, size: 30),
                 ),
-
                 const SizedBox(width: 14),
-
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -165,7 +161,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -188,9 +183,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   child: Icon(icon, color: Colors.white, size: 22),
                 ),
-
                 const SizedBox(width: 20),
-
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,7 +205,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ],
                   ),
                 ),
-
                 Icon(Icons.arrow_forward_ios_rounded,
                     color: Colors.white.withOpacity(0.45), size: 18),
               ],
@@ -277,28 +269,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-
-              // ------------------ HEADER ------------------
+              // HEADER
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Left Icon
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.grid_view_rounded,
                       color: Colors.white70,
                       size: 22,
                     ),
                   ),
-
                   _connectionStatus(),
-
-                  // Settings Icon
                   GestureDetector(
                     onTap: () {
                       Navigator.of(context).push(
@@ -324,7 +311,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
               const SizedBox(height: 30),
 
-              // TITLE
               const Text(
                 'Smart Line\nFollower',
                 style: TextStyle(
@@ -348,7 +334,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
               const SizedBox(height: 30),
 
-              // ------------------ STATUS CARDS ------------------
+              // STATUS CARDS
               SizedBox(
                 height: 280,
                 child: Row(
@@ -364,7 +350,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     const SizedBox(width: 16),
-
                     Expanded(
                       flex: 5,
                       child: Column(
@@ -397,7 +382,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
               const SizedBox(height: 35),
 
-              // ------------------ Controls Title ------------------
               Row(
                 children: [
                   const Text(
@@ -425,12 +409,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) =>
-                        ManualControlScreen(channel: widget.channel),
+                        ManualControlScreen(connection: widget.connection),
                   ),
                 ),
               ),
 
-              // Path Recording - الإصلاح هنا!
+              // Path Recording
               _actionButton(
                 title: 'Path Recording',
                 subtitle: 'Record and save track data',
@@ -438,7 +422,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 color: secondaryColor,
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (context) => RecordPathScreen(channel: widget.channel),
+                    builder: (context) =>
+                        RecordPathScreen(connection: widget.connection),
                   ),
                 ),
               ),

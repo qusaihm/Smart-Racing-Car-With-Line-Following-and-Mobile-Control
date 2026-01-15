@@ -1,13 +1,13 @@
-import 'package:flutter/material.dart';
+ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 import 'theme.dart';
 import 'path_details_screen.dart';
+import 'ws_connection.dart';
 
 class SavedPathsScreen extends StatefulWidget {
-  final WebSocketChannel channel;
+  final WsConnection connection;
 
-  const SavedPathsScreen({super.key, required this.channel});
+  const SavedPathsScreen({super.key, required this.connection});
 
   @override
   State<SavedPathsScreen> createState() => _SavedPathsScreenState();
@@ -33,7 +33,8 @@ class _SavedPathsScreenState extends State<SavedPathsScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(
-                child: CircularProgressIndicator(color: secondaryColor));
+              child: CircularProgressIndicator(color: secondaryColor),
+            );
           }
 
           final docs = snapshot.data!.docs;
@@ -67,8 +68,8 @@ class _SavedPathsScreenState extends State<SavedPathsScreen> {
                   border: Border.all(color: Colors.white10),
                 ),
                 child: ListTile(
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 16),
                   title: Text(
                     "Path ${index + 1}",
                     style: const TextStyle(
@@ -85,8 +86,8 @@ class _SavedPathsScreenState extends State<SavedPathsScreen> {
                       "⏱ Duration: ${duration}s\n"
                       "⚡ Avg Speed: $averageSpeed%\n"
                       "↪ Turns: $numberOfTurns",
-                      style:
-                          const TextStyle(color: Colors.white70, height: 1.4),
+                      style: const TextStyle(
+                          color: Colors.white70, height: 1.4),
                     ),
                   ),
                   trailing: const Icon(Icons.arrow_forward_ios,
@@ -97,8 +98,8 @@ class _SavedPathsScreenState extends State<SavedPathsScreen> {
                       MaterialPageRoute(
                         builder: (context) => PathDetailsScreen(
                           pathData: path,
-                          pathId: docs[index].id,
-                          channel: widget.channel,
+                          pathId: docs[index].id, // doc id (important)
+                          connection: widget.connection,
                         ),
                       ),
                     );

@@ -1,17 +1,24 @@
-import 'package:flutter/material.dart';
+ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:web_socket_channel/src/channel.dart';
 import 'theme.dart';
+import 'ws_connection.dart';
 
 class PathDetailsScreen extends StatelessWidget {
   final Map<String, dynamic> pathData;
+  final String pathId; // ✅ Firestore document ID
+  final WsConnection connection; // ✅ kept for consistency (future use)
 
-  const PathDetailsScreen({super.key, required this.pathData, required String pathId, required WebSocketChannel channel});
+  const PathDetailsScreen({
+    super.key,
+    required this.pathData,
+    required this.pathId,
+    required this.connection,
+  });
 
   @override
   Widget build(BuildContext context) {
     List<dynamic> points = pathData['pathPoints'] ?? [];
-    String id = pathData['id'] ?? "Unknown";
+    String idInsideData = pathData['id'] ?? "Unknown";
     String createdAt = pathData['createdAt'] ?? "-";
     int duration = pathData['duration'] ?? 0;
     int turns = pathData['numberOfTurns'] ?? 0;
@@ -19,18 +26,18 @@ class PathDetailsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("Path Details", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("Path Details",
+            style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: backgroundColor,
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(20),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
             // ------------------ Top Info ------------------
             Container(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: cardColor,
                 borderRadius: BorderRadius.circular(12),
@@ -39,49 +46,69 @@ class PathDetailsScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Path ID:", style: TextStyle(color: Colors.white54)),
-                  Text(id, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  SizedBox(height: 12),
+                  const Text("Doc ID (Firestore):",
+                      style: TextStyle(color: Colors.white54)),
+                  Text(pathId,
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
 
-                  Text("Created At:", style: TextStyle(color: Colors.white54)),
-                  Text(createdAt, style: TextStyle(color: Colors.white)),
-                  SizedBox(height: 12),
+                  const Text("Path ID (Saved in Data):",
+                      style: TextStyle(color: Colors.white54)),
+                  Text(idInsideData,
+                      style: const TextStyle(color: Colors.white)),
+                  const SizedBox(height: 12),
 
-                  Text("Duration:", style: TextStyle(color: Colors.white54)),
-                  Text(_formatDuration(duration), style: TextStyle(color: Colors.white)),
-                  SizedBox(height: 12),
+                  const Text("Created At:",
+                      style: TextStyle(color: Colors.white54)),
+                  Text(createdAt,
+                      style: const TextStyle(color: Colors.white)),
+                  const SizedBox(height: 12),
 
-                  Text("Turns:", style: TextStyle(color: Colors.white54)),
-                  Text("$turns", style: TextStyle(color: primaryColor)),
-                  SizedBox(height: 12),
+                  const Text("Duration:",
+                      style: TextStyle(color: Colors.white54)),
+                  Text(_formatDuration(duration),
+                      style: const TextStyle(color: Colors.white)),
+                  const SizedBox(height: 12),
 
-                  Text("Average Speed:", style: TextStyle(color: Colors.white54)),
-                  Text("$avgSpeed%", style: TextStyle(color: tertiaryColor)),
+                  const Text("Turns:",
+                      style: TextStyle(color: Colors.white54)),
+                  Text("$turns",
+                      style: const TextStyle(color: primaryColor)),
+                  const SizedBox(height: 12),
+
+                  const Text("Average Speed:",
+                      style: TextStyle(color: Colors.white54)),
+                  Text("$avgSpeed%",
+                      style: const TextStyle(color: tertiaryColor)),
                 ],
               ),
             ),
 
-            SizedBox(height: 30),
+            const SizedBox(height: 30),
 
             // ------------------ Title ------------------
             Text(
               "Recorded Points (${points.length})",
-              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
 
             // ------------------ Points List ------------------
             ListView.builder(
               shrinkWrap: true,
-              physics: NeverScrollableScrollPhysics(),
+              physics: const NeverScrollableScrollPhysics(),
               itemCount: points.length,
               itemBuilder: (context, index) {
-                final point = points[index];
+                final point = points[index] as Map<String, dynamic>;
                 List sensors = point['sensors'] ?? [0, 0, 0, 0, 0];
 
                 return Container(
-                  margin: EdgeInsets.only(bottom: 16),
-                  padding: EdgeInsets.all(16),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: cardColor,
                     borderRadius: BorderRadius.circular(12),
@@ -92,27 +119,31 @@ class PathDetailsScreen extends StatelessWidget {
                     children: [
                       Text(
                         "Point ${index + 1}",
-                        style: TextStyle(color: secondaryColor, fontSize: 16, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            color: secondaryColor,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold),
                       ),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
 
-                      _rowInfo("Action", point['action']),
-                      _rowInfo("Speed", point['speed'].toString()),
-                      _rowInfo("Timestamp", point['timestamp']),
+                      _rowInfo("Action", (point['action'] ?? "-").toString()),
+                      _rowInfo("Speed", (point['speed'] ?? 0).toString()),
+                      _rowInfo("Timestamp", (point['timestamp'] ?? "-").toString()),
 
-                      SizedBox(height: 12),
+                      const SizedBox(height: 12),
 
-                      Text("Sensors:", style: TextStyle(color: Colors.white70)),
-                      SizedBox(height: 6),
+                      const Text("Sensors:",
+                          style: TextStyle(color: Colors.white70)),
+                      const SizedBox(height: 6),
 
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          _sensorBox("S1", sensors[0]),
-                          _sensorBox("S2", sensors[1]),
-                          _sensorBox("S3", sensors[2]),
-                          _sensorBox("S4", sensors[3]),
-                          _sensorBox("S5", sensors[4]),
+                          _sensorBox("S1", (sensors[0] as num).toInt()),
+                          _sensorBox("S2", (sensors[1] as num).toInt()),
+                          _sensorBox("S3", (sensors[2] as num).toInt()),
+                          _sensorBox("S4", (sensors[3] as num).toInt()),
+                          _sensorBox("S5", (sensors[4] as num).toInt()),
                         ],
                       )
                     ],
@@ -121,22 +152,23 @@ class PathDetailsScreen extends StatelessWidget {
               },
             ),
 
-            SizedBox(height: 30),
+            const SizedBox(height: 30),
 
             // ------------------ Delete Button ------------------
             Center(
               child: ElevatedButton.icon(
-                onPressed: () => _deletePath(context, id),
-                icon: Icon(Icons.delete, color: Colors.white),
-                label: Text("Delete Path"),
+                onPressed: () => _confirmDelete(context),
+                icon: const Icon(Icons.delete, color: Colors.white),
+                label: const Text("Delete Path"),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
-                  padding: EdgeInsets.symmetric(horizontal: 30, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 30, vertical: 14),
                 ),
               ),
             ),
 
-            SizedBox(height: 50),
+            const SizedBox(height: 50),
           ],
         ),
       ),
@@ -147,12 +179,19 @@ class PathDetailsScreen extends StatelessWidget {
 
   Widget _rowInfo(String label, String value) {
     return Padding(
-      padding: EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: Colors.white54)),
-          Text(value, style: TextStyle(color: Colors.white)),
+          Text(label, style: const TextStyle(color: Colors.white54)),
+          Flexible(
+            child: Text(
+              value,
+              style: const TextStyle(color: Colors.white),
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );
@@ -160,7 +199,7 @@ class PathDetailsScreen extends StatelessWidget {
 
   Widget _sensorBox(String name, int value) {
     return Container(
-      padding: EdgeInsets.all(10),
+      padding: const EdgeInsets.all(10),
       width: 55,
       decoration: BoxDecoration(
         color: primaryColor.withOpacity(0.15),
@@ -169,33 +208,64 @@ class PathDetailsScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Text(name, style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
-          SizedBox(height: 4),
+          Text(name,
+              style: const TextStyle(
+                  color: primaryColor, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
           Text(
             value.toString(),
-            style: TextStyle(color: Colors.white, fontSize: 14),
+            style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
         ],
       ),
     );
   }
 
-  // ------------------ Delete function ------------------
+  // ------------------ Delete ------------------
 
-  Future<void> _deletePath(BuildContext context, String id) async {
+  void _confirmDelete(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cardColor,
+        title: const Text("Delete Path?",
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text(
+          "Are you sure you want to delete this path? This cannot be undone.",
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel",
+                style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _deletePath(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deletePath(BuildContext context) async {
     try {
       await FirebaseFirestore.instance
           .collection("recorded_paths")
-          .doc(id)
+          .doc(pathId) // ✅ الصحيح: docId
           .delete();
 
       Navigator.pop(context);
 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Path deleted successfully"),
         backgroundColor: Colors.green,
       ));
-
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text("Error deleting path: $e"),

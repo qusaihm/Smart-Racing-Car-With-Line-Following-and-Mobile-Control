@@ -12,16 +12,19 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Firebase Dependencies
+  # Firebase
   firebase_core: ^3.6.0
   firebase_auth: ^5.3.1
   cloud_firestore: ^5.3.0
 
-  # WebSocket for ESP32 Communication
+  # WebSocket (ESP32)
   web_socket_channel: ^2.4.0
 
-  # HTTP for additional network requests
+  # HTTP
   http: ^1.1.0
+
+  # Date formatting
+  intl: ^0.19.0
 
   # Icons
   cupertino_icons: ^1.0.8
@@ -33,5 +36,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-
-  # تم حذف assets و fonts لتجنب أخطاء البناء
