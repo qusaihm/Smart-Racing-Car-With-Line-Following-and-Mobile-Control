@@ -102,57 +102,71 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
 
   @override
   void initState() {
-    super.initState();
+  super.initState();
 
-    // ✅ Listener واحد على broadcast stream
-    _wsSub = widget.connection.stream.listen(
-      (message) {
-        final msg = message.toString();
-        print("📩 Message from ESP32: $msg");
+  // ✅ Listener واحد على broadcast stream
+  _wsSub = widget.connection.stream.listen(
+    (message) {
+      final msg = message.toString();
+      print("📩 Message from ESP32: $msg");
 
-        if (!mounted) return;
-        setState(() => _isConnected = true);
-
-        // رسائل ESP32 اللي بتهمنا
-        if (msg.startsWith("MODE:")) {
-          // انت عندك MODE: "Line Following" / "Recording Path" ... الخ
-          // ما رح نربطها مباشرة بـ engine running، خلّيها بسيطة:
-        } else if (msg.startsWith("ACTION:")) {
-          // ممكن تستفيد منها لاحقًا
-        } else if (msg.startsWith("SPEED:")) {
-          // تحديث السرعة من ESP (تأكيد)
-          final newSpeed = int.tryParse(msg.substring(6).trim());
-          if (newSpeed != null) {
-            setState(() {
-              _currentSpeed = newSpeed.clamp(0, 255);
-              _currentSpeedPercentage =
-                  ((_currentSpeed / 255) * 100).clamp(0, 100);
-            });
-          }
-        } else if (msg.contains("CONNECTED:ESP32_READY")) {
-          setState(() => _isConnected = true);
-        }
-      },
-      onDone: () {
-        print("⚠ Connection closed by server");
-        if (!mounted) return;
-        setState(() => _isConnected = false);
-      },
-      onError: (error) {
-        print("❌ Connection error: $error");
-        if (!mounted) return;
-        setState(() => _isConnected = false);
-      },
-    );
-
-    // ✅ اطلب status أول ما تفتح الشاشة (اختياري بس مفيد)
-    Future.delayed(const Duration(milliseconds: 150), () {
       if (!mounted) return;
-      try {
-        widget.connection.send('get_status');
-      } catch (_) {}
-    });
-  }
+      setState(() => _isConnected = true);
+
+      // ✅ Alert (weak power / stutter)
+      if (msg.startsWith("ALERT:WEAK_POWER")) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("⚠ Power issue detected (motor stuttering)\n$msg"),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+
+      // رسائل ESP32 اللي بتهمنا
+      if (msg.startsWith("MODE:")) {
+        // MODE: "Line Following" / "Recording Path" ...
+      } else if (msg.startsWith("ACTION:")) {
+        // ممكن تستفيد منها لاحقًا
+      } else if (msg.startsWith("SPEED:")) {
+        // تحديث السرعة من ESP (تأكيد)
+        final newSpeed = int.tryParse(msg.substring(6).trim());
+        if (newSpeed != null) {
+          setState(() {
+            _currentSpeed = newSpeed.clamp(0, 255);
+            _currentSpeedPercentage =
+                ((_currentSpeed / 255) * 100).clamp(0, 100);
+          });
+        }
+      } else if (msg.contains("CONNECTED:ESP32_READY")) {
+        setState(() => _isConnected = true);
+      }
+    },
+    onDone: () {
+      print("⚠ Connection closed by server");
+      if (!mounted) return;
+      setState(() => _isConnected = false);
+    },
+    onError: (error) {
+      print("❌ Connection error: $error");
+      if (!mounted) return;
+      setState(() => _isConnected = false);
+    },
+  );
+
+  // ✅ اطلب status أول ما تفتح الشاشة (اختياري بس مفيد)
+  Future.delayed(const Duration(milliseconds: 150), () {
+    if (!mounted) return;
+    try {
+      widget.connection.send('get_status'); // ✅ نفس اسم الأمر في ESP32
+    } catch (e) {
+      // ignore
+      print("⚠ get_status send failed: $e");
+    }
+  });
+}
 
   @override
   void dispose() {
