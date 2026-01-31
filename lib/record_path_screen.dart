@@ -126,10 +126,41 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // ✅ DATA time base
+  int _recordStartEspMs = 0; // ESP millis at first received DATA
+  int _recordStartPhoneMs = 0; // phone ms at first received DATA
+  bool _hasStartSync = false;
+
   String _formatTime(int seconds) {
     final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
     final remainingSeconds = (seconds % 60).toString().padLeft(2, '0');
     return '$minutes:$remainingSeconds';
+  }
+
+  // ✅ Helper: parse key=value fields from DATA string
+  Map<String, String> _parseFields(String body) {
+    // body example: ts=12345;act=FORWARD;spd=150;s=1,2,3,4,5
+    final out = <String, String>{};
+    final parts = body.split(';');
+    for (final p in parts) {
+      final eq = p.indexOf('=');
+      if (eq <= 0) continue;
+      final k = p.substring(0, eq).trim();
+      final v = p.substring(eq + 1).trim();
+      if (k.isNotEmpty) out[k] = v;
+    }
+    return out;
+  }
+
+  // ✅ Convert ESP millis to DateTime using start-sync (best)
+  DateTime _espMillisToDateTime(int espMs) {
+    // first DATA defines mapping between espMs and phone time
+    if (!_hasStartSync || _recordStartEspMs == 0 || _recordStartPhoneMs == 0) {
+      // fallback: now
+      return DateTime.now();
+    }
+    final delta = espMs - _recordStartEspMs;
+    return DateTime.fromMillisecondsSinceEpoch(_recordStartPhoneMs + delta);
   }
 
   Future<void> _startRecording() async {
@@ -149,15 +180,20 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
       recordedPath.clear();
       _currentStatus = 'Sending command...';
       _lastAction = 'STOP';
+
+      // ✅ reset sync
+      _recordStartEspMs = 0;
+      _recordStartPhoneMs = 0;
+      _hasStartSync = false;
     });
 
     try {
       widget.connection.send('record_start');
-      widget.connection.send('get_status'); // ✅ helps get first data fast
+      widget.connection.send('get_status'); // ✅ get first data fast
       print('📤 Command sent: record_start + get_status');
 
       setState(() {
-        _currentStatus = 'Recording started – waiting for sensor data...';
+        _currentStatus = 'Recording started – waiting for DATA...';
       });
     } catch (e) {
       print('❌ Failed to send record_start: $e');
@@ -177,70 +213,98 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
       });
     });
 
-    // ✅ Listen to WebSocket messages (BROADCAST stream now)
+    // ✅ Listen to WebSocket messages
     _webSocketSubscription = widget.connection.stream.listen((message) {
       final msg = message.toString();
-      print('📩 Received: $msg');
+      // print('📩 Received: $msg');
 
       if (!_isRecording) return;
 
-      // Update action first (so sensor point uses latest action)
+      // ✅ 1) Prefer DATA for recording (best sync)
+      if (msg.startsWith("DATA:")) {
+        final body = msg.substring(5).trim();
+        final fields = _parseFields(body);
+
+        final espTs = int.tryParse(fields['ts'] ?? '') ?? 0;
+        final act = (fields['act'] ?? 'STOP').trim();
+        final spd = int.tryParse(fields['spd'] ?? '') ?? _currentSpeed;
+
+        List<int> sensors = [0, 0, 0, 0, 0];
+        final sRaw = fields['s'] ?? '';
+        final sParts = sRaw.split(',');
+        if (sParts.length >= 5) {
+          sensors = sParts
+              .take(5)
+              .map((e) => int.tryParse(e.trim()) ?? 0)
+              .toList();
+        }
+
+        // ✅ Start sync on first DATA
+        if (!_hasStartSync && espTs > 0) {
+          _hasStartSync = true;
+          _recordStartEspMs = espTs;
+          _recordStartPhoneMs = DateTime.now().millisecondsSinceEpoch;
+          print("✅ DATA sync start | esp=$_recordStartEspMs | phone=$_recordStartPhoneMs");
+        }
+
+        final ts = (espTs > 0) ? _espMillisToDateTime(espTs) : DateTime.now();
+
+        // update last known action/speed for UI reference
+        _lastAction = act;
+        _currentSpeed = spd;
+
+        // ✅ Add point (from DATA only)
+        recordedPath.add(PathPoint(
+          timestamp: ts,
+          speed: spd,
+          action: act,
+          sensorValues: sensors,
+        ));
+
+        _totalSpeedSum += spd;
+        _speedReadings++;
+
+        if (!mounted) return;
+        setState(() {
+          _averageSpeed = _speedReadings > 0
+              ? (_totalSpeedSum / _speedReadings) / 255 * 100
+              : 0.0;
+
+          _currentStatus = "Recording (${recordedPath.length} points)";
+
+          // ✅ turns: count when action indicates turn
+          if (act == 'LEFT' || act == 'RIGHT' || act == 'SLIGHT_LEFT' || act == 'SLIGHT_RIGHT') {
+            _numberOfTurns++;
+          }
+        });
+
+        return;
+      }
+
+      // ✅ 2) Keep old messages for compatibility (do not record points from SENSORS now)
       if (msg.startsWith("ACTION:")) {
         _lastAction = msg.substring(7).trim();
-        print('🔄 Action: $_lastAction');
         return;
       }
 
-      // Update speed
       if (msg.startsWith("SPEED:")) {
         _currentSpeed = int.tryParse(msg.substring(6).trim()) ?? _currentSpeed;
-        print('⚡ Speed: $_currentSpeed');
         return;
       }
 
-      // Update mode (optional)
       if (msg.startsWith("MODE:")) {
-        final mode = msg.substring(5).trim();
-        print('📝 Mode: $mode');
+        // optional
         return;
       }
 
-      // Handle sensor data
-      if (msg.startsWith("SENSORS:")) {
-        List<String> sensorStrs = msg.substring(8).split(",");
-        if (sensorStrs.length == 5) {
-          List<int> sensorValues =
-              sensorStrs.map((s) => int.tryParse(s.trim()) ?? 0).toList();
-
-          recordedPath.add(PathPoint(
-            timestamp: DateTime.now(),
-            speed: _currentSpeed,
-            action: _lastAction,
-            sensorValues: sensorValues,
-          ));
-
-          _totalSpeedSum += _currentSpeed;
-          _speedReadings++;
-
-          if (!mounted) return;
-          setState(() {
-            _averageSpeed = _speedReadings > 0
-                ? (_totalSpeedSum / _speedReadings) / 255 * 100
-                : 0.0;
-
-            _currentStatus = "Recording (${recordedPath.length} points)";
-
-            // ⚠️ عدّاد اللفات: الأفضل نعدها فقط عند تغيير الحركة
-            // (هذا سيظل بسيط الآن مثل كودك، لكن رح نحسّنه لاحقًا)
-            if (_lastAction == 'LEFT' || _lastAction == 'RIGHT') {
-              _numberOfTurns++;
-            }
-          });
-
-          print(
-              "✅ Point #${recordedPath.length} | Action: $_lastAction | Speed: $_currentSpeed | Sensors: $sensorValues");
-        }
+      if (msg.contains("CONNECTED:ESP32_READY")) {
+        // optional
+        return;
       }
+
+      // ❌ Do NOT record from SENSORS anymore (DATA replaced it)
+      // if (msg.startsWith("SENSORS:")) { ... }
+
     }, onError: (e) {
       print("❌ WS listen error: $e");
     }, onDone: () {
@@ -280,8 +344,8 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
       _currentStatus = 'Waiting for remaining data...';
     });
 
-    // 3) Wait to flush last sensor messages
-    await Future.delayed(const Duration(milliseconds: 1500));
+    // 3) Wait to flush last DATA messages
+    await Future.delayed(const Duration(milliseconds: 1200));
 
     // 4) Cancel subscription
     await _webSocketSubscription?.cancel();
@@ -319,8 +383,7 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-              '✅ Path saved successfully! (${recordedPath.length} points)'),
+          content: Text('✅ Path saved successfully! (${recordedPath.length} points)'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 4),
         ),
@@ -384,8 +447,7 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Record Path',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Record Path', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: backgroundColor,
         actions: [
           IconButton(
@@ -403,9 +465,7 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: _isRecording
-                    ? secondaryColor.withOpacity(0.1)
-                    : cardColor,
+                color: _isRecording ? secondaryColor.withOpacity(0.1) : cardColor,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                     color: _isRecording ? secondaryColor : Colors.transparent),
@@ -413,9 +473,7 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
               child: Row(
                 children: [
                   Icon(
-                    _isRecording
-                        ? Icons.radio_button_checked
-                        : Icons.circle_outlined,
+                    _isRecording ? Icons.radio_button_checked : Icons.circle_outlined,
                     color: _isRecording ? Colors.green : Colors.grey,
                   ),
                   const SizedBox(width: 12),
@@ -424,9 +482,7 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isRecording
-                              ? 'RECORDING ACTIVE'
-                              : 'READY TO RECORD',
+                          _isRecording ? 'RECORDING ACTIVE' : 'READY TO RECORD',
                           style: TextStyle(
                             color: _isRecording ? Colors.green : Colors.white70,
                             fontWeight: FontWeight.bold,
@@ -434,14 +490,12 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(_currentStatus,
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 14)),
+                            style: const TextStyle(color: Colors.white70, fontSize: 14)),
                         if (_isRecording && recordedPath.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
-                            'Points: ${recordedPath.length} | Speed: $_currentSpeed',
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 12),
+                            'Points: ${recordedPath.length} | Speed: $_currentSpeed | Action: $_lastAction',
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
                           ),
                         ],
                       ],
@@ -456,17 +510,13 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
               width: 200,
               height: 200,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                    colors: [primaryColor, secondaryColor]),
+                gradient: const LinearGradient(colors: [primaryColor, secondaryColor]),
                 shape: BoxShape.circle,
                 border: Border.all(
-                    color: _isRecording ? tertiaryColor : primaryColor,
-                    width: 4),
+                    color: _isRecording ? tertiaryColor : primaryColor, width: 4),
                 boxShadow: [
                   BoxShadow(
-                    color: _isRecording
-                        ? secondaryColor.withOpacity(0.5)
-                        : Colors.transparent,
+                    color: _isRecording ? secondaryColor.withOpacity(0.5) : Colors.transparent,
                     blurRadius: 15,
                     spreadRadius: 2,
                   ),
@@ -482,20 +532,16 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                   Text(
                     _isRecording ? 'LIVE' : 'READY',
                     style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18),
+                        color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
                   ),
                   if (_isRecording) ...[
                     const SizedBox(height: 8),
                     Text('$_recordingTimeSeconds s',
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 16)),
+                        style: const TextStyle(color: Colors.white70, fontSize: 16)),
                     if (recordedPath.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text('${recordedPath.length} points',
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 14)),
+                          style: const TextStyle(color: Colors.white70, fontSize: 14)),
                     ],
                   ],
                 ],
@@ -558,16 +604,12 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                       children: [
                         const Text('Firestore Storage',
                             style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold)),
+                                color: Colors.white, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 4),
                         StreamBuilder<QuerySnapshot>(
-                          stream:
-                              _firestore.collection('recorded_paths').snapshots(),
+                          stream: _firestore.collection('recorded_paths').snapshots(),
                           builder: (context, snapshot) {
-                            int count = snapshot.hasData
-                                ? snapshot.data!.docs.length
-                                : 0;
+                            int count = snapshot.hasData ? snapshot.data!.docs.length : 0;
                             return Text('Total saved paths: $count',
                                 style: const TextStyle(color: Colors.white70));
                           },
@@ -628,19 +670,18 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.info_outline,
-                          color: primaryColor, size: 20),
+                      Icon(Icons.info_outline, color: primaryColor, size: 20),
                       SizedBox(width: 8),
                       Text('Recording Info',
                           style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold)),
+                              color: Colors.white, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
                     _isRecording
                         ? '• Recording in progress - ${recordedPath.length} points captured\n'
+                            '• DATA messages are used for accurate timing\n'
                             '• Data will be saved to Firestore when you stop\n'
                             '• View saved paths via the history button'
                         : '• Press START RECORDING to begin\n'

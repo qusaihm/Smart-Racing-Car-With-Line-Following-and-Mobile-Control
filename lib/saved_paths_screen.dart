@@ -21,7 +21,10 @@ class _SavedPathsScreenState extends State<SavedPathsScreen> {
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        title: const Text("Saved Paths"),
+        title: const Text(
+          "Saved Paths",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: backgroundColor,
         elevation: 0,
       ),
@@ -54,11 +57,12 @@ class _SavedPathsScreenState extends State<SavedPathsScreen> {
             itemBuilder: (context, index) {
               final path = docs[index].data() as Map<String, dynamic>;
 
-              String createdAt = path['createdAt'] ?? "";
-              int totalPoints = path['totalPoints'] ?? 0;
-              int duration = path['duration'] ?? 0;
-              int averageSpeed = path['averageSpeed'] ?? 0;
-              int numberOfTurns = path['numberOfTurns'] ?? 0;
+              // ✅ Safe reads
+              final String createdAt = path['createdAt'] ?? "-";
+              final int totalPoints = path['totalPoints'] ?? 0;
+              final int duration = path['duration'] ?? 0;
+              final int averageSpeed = path['averageSpeed'] ?? 0;
+              final int numberOfTurns = path['numberOfTurns'] ?? 0;
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 16),
@@ -69,7 +73,9 @@ class _SavedPathsScreenState extends State<SavedPathsScreen> {
                 ),
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 16),
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
                   title: Text(
                     "Path ${index + 1}",
                     style: const TextStyle(
@@ -87,18 +93,23 @@ class _SavedPathsScreenState extends State<SavedPathsScreen> {
                       "⚡ Avg Speed: $averageSpeed%\n"
                       "↪ Turns: $numberOfTurns",
                       style: const TextStyle(
-                          color: Colors.white70, height: 1.4),
+                        color: Colors.white70,
+                        height: 1.4,
+                      ),
                     ),
                   ),
-                  trailing: const Icon(Icons.arrow_forward_ios,
-                      color: Colors.white70),
+                  trailing: const Icon(
+                    Icons.arrow_forward_ios,
+                    color: Colors.white70,
+                  ),
                   onTap: () {
+                    // ✅ Pass full path data to details screen
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => PathDetailsScreen(
                           pathData: path,
-                          pathId: docs[index].id, // doc id (important)
+                          pathId: docs[index].id, // Firestore doc ID
                           connection: widget.connection,
                         ),
                       ),
