@@ -16,123 +16,126 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final bool _isConnected = true; // ممكن لاحقًا تربطها بستريم
+  final bool _isConnected = true;
   final int _batteryLevel = 85;
   final bool _isEngineRunning = false;
   final String _drivingMode = 'Manual';
 
-  // ------------------------------
-  // Status Card (Battery / Engine / Mode)
-  // ------------------------------
-  Widget _statusCard({
-    required IconData icon,
-    required String title,
-    required String value,
-    required Color color,
-    bool isWide = false,
-  }) {
+  Color _batteryColor() {
+    if (_batteryLevel > 60) return Colors.greenAccent;
+    if (_batteryLevel > 30) return Colors.orangeAccent;
+    return Colors.redAccent;
+  }
+
+  IconData _batteryIcon() {
+    if (_batteryLevel > 80) return Icons.battery_full;
+    if (_batteryLevel > 50) return Icons.battery_5_bar;
+    if (_batteryLevel > 20) return Icons.battery_3_bar;
+    return Icons.battery_alert;
+  }
+
+  Widget _batteryCard() {
+    final color = _batteryColor();
+
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
+            color.withOpacity(0.25),
             cardColor.withOpacity(0.9),
-            cardColor.withOpacity(0.6),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.25),
-            blurRadius: 20,
+            color: color.withOpacity(0.3),
+            blurRadius: 25,
             offset: const Offset(0, 10),
           ),
         ],
       ),
-      child: title == "Battery Level"
-          ? Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    gradient: LinearGradient(
-                      colors: [
-                        color.withOpacity(0.25),
-                        color.withOpacity(0.05),
-                      ],
-                    ),
-                  ),
-                  child: Icon(icon, color: color, size: 38),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  value,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white60,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            )
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    gradient: LinearGradient(
-                      colors: [
-                        color.withOpacity(0.25),
-                        color.withOpacity(0.05),
-                      ],
-                    ),
-                  ),
-                  child: Icon(icon, color: color, size: 30),
-                ),
-                const SizedBox(width: 14),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      value,
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Colors.white60,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(_batteryIcon(), color: color, size: 52),
+          const SizedBox(height: 14),
+          Text(
+            '$_batteryLevel%',
+            style: TextStyle(
+              color: color,
+              fontSize: 36,
+              fontWeight: FontWeight.bold,
             ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Battery Level',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+          const SizedBox(height: 18),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: LinearProgressIndicator(
+              value: _batteryLevel / 100,
+              minHeight: 8,
+              backgroundColor: Colors.white12,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  // ------------------------------
-  // Action Buttons
-  // ------------------------------
+  Widget _statusMiniCard({
+    required IconData icon,
+    required String title,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withOpacity(0.15),
+            ),
+            child: Icon(icon, color: color, size: 26),
+          ),
+          const SizedBox(width: 16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                title,
+                style: const TextStyle(color: Colors.white60),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _actionButton({
     required String title,
     required String subtitle,
@@ -146,109 +149,73 @@ class _DashboardScreenState extends State<DashboardScreen> {
         gradient: LinearGradient(
           colors: [
             color.withOpacity(0.18),
-            color.withOpacity(0.06),
+            color.withOpacity(0.05),
           ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
         ),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: color.withOpacity(0.25)),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.15),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(24),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        color,
-                        color.withOpacity(0.7),
-                      ],
-                    ),
-                  ),
-                  child: Icon(icon, color: Colors.white, size: 22),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title,
-                          style: const TextStyle(
-                            color: Colors.white,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 22),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 26,
+                backgroundColor: color,
+                child: Icon(icon, color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                          )),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.55),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
+                            color: Colors.white)),
+                    const SizedBox(height: 4),
+                    Text(subtitle,
+                        style: const TextStyle(
+                            fontSize: 13, color: Colors.white60)),
+                  ],
                 ),
-                Icon(Icons.arrow_forward_ios_rounded,
-                    color: Colors.white.withOpacity(0.45), size: 18),
-              ],
-            ),
+              ),
+              const Icon(Icons.arrow_forward_ios,
+                  color: Colors.white38, size: 18),
+            ],
           ),
         ),
       ),
     );
   }
 
-  // ------------------------------
-  // Connection Status
-  // ------------------------------
   Widget _connectionStatus() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: _isConnected
-            ? secondaryColor.withOpacity(0.2)
-            : Colors.red.withOpacity(0.2),
+        color: secondaryColor.withOpacity(0.15),
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: _isConnected ? secondaryColor : Colors.red,
-        ),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 9,
-            height: 9,
-            decoration: BoxDecoration(
-              color: _isConnected ? secondaryColor : Colors.red,
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              color: secondaryColor,
               shape: BoxShape.circle,
             ),
           ),
           const SizedBox(width: 8),
-          Text(
-            _isConnected ? 'ONLINE' : 'OFFLINE',
+          const Text(
+            'ONLINE',
             style: TextStyle(
-              color: _isConnected ? secondaryColor : Colors.red,
+              color: secondaryColor,
               fontWeight: FontWeight.bold,
               fontSize: 12,
-              letterSpacing: 1,
             ),
           ),
         ],
@@ -256,9 +223,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // ------------------------------
-  // BUILD
-  // ------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -269,41 +233,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // HEADER
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(
-                      Icons.grid_view_rounded,
-                      color: Colors.white70,
-                      size: 22,
-                    ),
-                  ),
+                  const Icon(Icons.grid_view, color: Colors.white70),
                   _connectionStatus(),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (context) => const SettingsScreen()),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.settings_rounded,
-                        color: Colors.white,
-                        size: 24,
-                      ),
+                  IconButton(
+                    icon: const Icon(Icons.settings, color: Colors.white),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const SettingsScreen()),
                     ),
                   ),
                 ],
@@ -312,117 +252,85 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 30),
 
               const Text(
-                'Smart Line\nFollower',
+                'Smart Line Follower',
                 style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 36,
+                  fontSize: 34,
                   fontWeight: FontWeight.w800,
-                  height: 1.1,
-                  letterSpacing: 1.2,
+                  color: Colors.white,
                 ),
               ),
-
-              const SizedBox(height: 10),
-
-              Text(
-                'Monitor and control your robot in real-time.',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.5),
-                  fontSize: 16,
-                ),
+              const SizedBox(height: 6),
+              const Text(
+                'Real-time monitoring & control dashboard',
+                style: TextStyle(color: Colors.white60),
               ),
 
               const SizedBox(height: 30),
 
-              // STATUS CARDS
-              SizedBox(
-                height: 280,
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: _statusCard(
-                        icon: Icons.battery_charging_full_rounded,
-                        title: 'Battery Level',
-                        value: '$_batteryLevel%',
-                        color: secondaryColor,
-                        isWide: true,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      flex: 5,
-                      child: Column(
-                        children: [
-                          Expanded(
-                            child: _statusCard(
-                              icon: Icons.speed_rounded,
-                              title: 'Engine',
-                              value: _isEngineRunning ? 'ON' : 'OFF',
-                              color: _isEngineRunning
-                                  ? secondaryColor
-                                  : Colors.grey,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Expanded(
-                            child: _statusCard(
-                              icon: Icons.sports_esports_outlined,
-                              title: 'Mode',
-                              value: _drivingMode,
-                              color: primaryColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 35),
-
               Row(
                 children: [
-                  const Text(
-                    'Controls',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                  Expanded(flex: 4, child: _batteryCard()),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    flex: 5,
+                    child: Column(
+                      children: [
+                        _statusMiniCard(
+                          icon: Icons.speed,
+                          title: 'Engine',
+                          value: _isEngineRunning ? 'ON' : 'OFF',
+                          color: _isEngineRunning
+                              ? secondaryColor
+                              : Colors.grey,
+                        ),
+                        const SizedBox(height: 16),
+                        _statusMiniCard(
+                          icon: Icons.gamepad,
+                          title: 'Mode',
+                          value: _drivingMode,
+                          color: primaryColor,
+                        ),
+                      ],
                     ),
                   ),
-                  const Spacer(),
-                  Icon(Icons.tune,
-                      color: Colors.white.withOpacity(0.5), size: 20),
                 ],
+              ),
+
+              const SizedBox(height: 40),
+
+              const Text(
+                'Controls',
+                style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white),
               ),
 
               const SizedBox(height: 20),
 
-              // Remote Control
               _actionButton(
                 title: 'Remote Control',
-                subtitle: 'Manual joystick interface',
+                subtitle: 'Manual driving interface',
                 icon: Icons.gamepad,
                 color: primaryColor,
-                onPressed: () => Navigator.of(context).push(
+                onPressed: () => Navigator.push(
+                  context,
                   MaterialPageRoute(
-                    builder: (context) =>
+                    builder: (_) =>
                         ManualControlScreen(connection: widget.connection),
                   ),
                 ),
               ),
 
-              // Path Recording
               _actionButton(
                 title: 'Path Recording',
-                subtitle: 'Record and save track data',
+                subtitle: 'Record and replay routes',
                 icon: Icons.timeline,
                 color: secondaryColor,
-                onPressed: () => Navigator.of(context).push(
+                onPressed: () => Navigator.push(
+                  context,
                   MaterialPageRoute(
-                    builder: (context) =>
+                    builder: (_) =>
                         RecordPathScreen(connection: widget.connection),
                   ),
                 ),

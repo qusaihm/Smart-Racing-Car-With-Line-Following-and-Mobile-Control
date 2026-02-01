@@ -38,8 +38,7 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
   final int _batteryLevel = 85;
   bool _isConnected = true;
 
-  int _currentSpeed = 150; // السرعة الفعلية المرسلة للـ ESP
-  double get _simulatedSpeedKmH => (_currentSpeed * 0.07).clamp(0, 7);
+  int _currentSpeed = 150;
 
   StreamSubscription? _wsSub;
 
@@ -79,7 +78,6 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
       );
     }
 
-    // تحديث حالة المحرك بناءً على الأوامر
     if (command == 'start') {
       setState(() => _isEngineRunning = true);
     } else if (command == 'stop') {
@@ -87,7 +85,6 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
     }
   }
 
-  // ✅ تحديث الـ UI فقط أثناء السحب (بدون إرسال)
   void _updateSpeedUI(double value) {
     setState(() {
       _currentSpeedPercentage = value;
@@ -95,78 +92,67 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
     });
   }
 
-  // ✅ إرسال السرعة فقط عند الإفلات (أو preset)
   void _sendSpeedToESP() {
     _sendCommand('speed:$_currentSpeed', showToast: false);
   }
 
   @override
   void initState() {
-  super.initState();
+    super.initState();
 
-  // ✅ Listener واحد على broadcast stream
-  _wsSub = widget.connection.stream.listen(
-    (message) {
-      final msg = message.toString();
-      print("📩 Message from ESP32: $msg");
+    _wsSub = widget.connection.stream.listen(
+      (message) {
+        final msg = message.toString();
+        print("📩 Message from ESP32: $msg");
 
-      if (!mounted) return;
-      setState(() => _isConnected = true);
-
-      // ✅ Alert (weak power / stutter)
-      if (msg.startsWith("ALERT:WEAK_POWER")) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("⚠ Power issue detected (motor stuttering)\n$msg"),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-        return;
-      }
-
-      // رسائل ESP32 اللي بتهمنا
-      if (msg.startsWith("MODE:")) {
-        // MODE: "Line Following" / "Recording Path" ...
-      } else if (msg.startsWith("ACTION:")) {
-        // ممكن تستفيد منها لاحقًا
-      } else if (msg.startsWith("SPEED:")) {
-        // تحديث السرعة من ESP (تأكيد)
-        final newSpeed = int.tryParse(msg.substring(6).trim());
-        if (newSpeed != null) {
-          setState(() {
-            _currentSpeed = newSpeed.clamp(0, 255);
-            _currentSpeedPercentage =
-                ((_currentSpeed / 255) * 100).clamp(0, 100);
-          });
-        }
-      } else if (msg.contains("CONNECTED:ESP32_READY")) {
+        if (!mounted) return;
         setState(() => _isConnected = true);
-      }
-    },
-    onDone: () {
-      print("⚠ Connection closed by server");
-      if (!mounted) return;
-      setState(() => _isConnected = false);
-    },
-    onError: (error) {
-      print("❌ Connection error: $error");
-      if (!mounted) return;
-      setState(() => _isConnected = false);
-    },
-  );
 
-  // ✅ اطلب status أول ما تفتح الشاشة (اختياري بس مفيد)
-  Future.delayed(const Duration(milliseconds: 150), () {
-    if (!mounted) return;
-    try {
-      widget.connection.send('get_status'); // ✅ نفس اسم الأمر في ESP32
-    } catch (e) {
-      // ignore
-      print("⚠ get_status send failed: $e");
-    }
-  });
-}
+        if (msg.startsWith("ALERT:WEAK_POWER")) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("⚠ Power issue detected (motor stuttering)\n$msg"),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          return;
+        }
+
+        if (msg.startsWith("SPEED:")) {
+          final newSpeed = int.tryParse(msg.substring(6).trim());
+          if (newSpeed != null) {
+            setState(() {
+              _currentSpeed = newSpeed.clamp(0, 255);
+              _currentSpeedPercentage =
+                  ((_currentSpeed / 255) * 100).clamp(0, 100);
+            });
+          }
+        } else if (msg.contains("CONNECTED:ESP32_READY")) {
+          setState(() => _isConnected = true);
+        }
+      },
+      onDone: () {
+        print("⚠ Connection closed by server");
+        if (!mounted) return;
+        setState(() => _isConnected = false);
+      },
+      onError: (error) {
+        print("❌ Connection error: $error");
+        if (!mounted) return;
+        setState(() => _isConnected = false);
+      },
+    );
+
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      try {
+        widget.connection.send('get_status');
+      } catch (e) {
+        print("⚠ get_status send failed: $e");
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -174,12 +160,143 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
     super.dispose();
   }
 
+  // ==========================
+  // Battery UI Helpers
+  // ==========================
+  Color _batteryColor() {
+    if (_batteryLevel > 60) return Colors.greenAccent;
+    if (_batteryLevel > 30) return Colors.orangeAccent;
+    return Colors.redAccent;
+  }
+
+  IconData _batteryIcon() {
+    if (_batteryLevel > 80) return Icons.battery_full;
+    if (_batteryLevel > 50) return Icons.battery_5_bar;
+    if (_batteryLevel > 20) return Icons.battery_3_bar;
+    return Icons.battery_alert;
+  }
+
+  Widget _statusTile({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 26),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 13)),
+                  const SizedBox(height: 6),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _batteryTile() {
+    final c = _batteryColor();
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: c.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(_batteryIcon(), color: c, size: 26),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Battery',
+                          style: TextStyle(
+                              color: Colors.white70, fontSize: 13)),
+                      const SizedBox(height: 6),
+                      Text(
+                        '$_batteryLevel%',
+                        style: TextStyle(
+                          color: c,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: LinearProgressIndicator(
+                value: _batteryLevel / 100,
+                minHeight: 8,
+                backgroundColor: Colors.white12,
+                valueColor: AlwaysStoppedAnimation<Color>(c),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==========================
+  // BUILD
+  // ==========================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title:
-            const Text('Remote Control', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Remote Control',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: backgroundColor,
         actions: [
           IconButton(
@@ -235,7 +352,7 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
             ),
             const SizedBox(height: 30),
 
-            // 🚗 ENGINE CONTROL BUTTON
+            // ENGINE CONTROL
             _ControlCard(
               children: [
                 const Text('Engine Control',
@@ -287,7 +404,7 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
 
             const SizedBox(height: 30),
 
-            // 🎚 SPEED CONTROL SECTION
+            // SPEED CONTROL
             _ControlCard(
               children: [
                 Row(
@@ -310,8 +427,8 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                         ),
                         Text(
                           '$_currentSpeed/255',
-                          style:
-                              const TextStyle(color: Colors.white70, fontSize: 14),
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 14),
                         ),
                       ],
                     ),
@@ -319,7 +436,6 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // ✅ Slider: UI update only أثناء السحب + إرسال عند الإفلات
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
                     trackHeight: 12.0,
@@ -354,15 +470,20 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: const [
                     Text('0%',
-                        style: TextStyle(fontSize: 14, color: Colors.white70)),
+                        style:
+                            TextStyle(fontSize: 14, color: Colors.white70)),
                     Text('25%',
-                        style: TextStyle(fontSize: 14, color: Colors.white70)),
+                        style:
+                            TextStyle(fontSize: 14, color: Colors.white70)),
                     Text('50%',
-                        style: TextStyle(fontSize: 14, color: Colors.white70)),
+                        style:
+                            TextStyle(fontSize: 14, color: Colors.white70)),
                     Text('75%',
-                        style: TextStyle(fontSize: 14, color: Colors.white70)),
+                        style:
+                            TextStyle(fontSize: 14, color: Colors.white70)),
                     Text('100%',
-                        style: TextStyle(fontSize: 14, color: Colors.white70)),
+                        style:
+                            TextStyle(fontSize: 14, color: Colors.white70)),
                   ],
                 ),
                 const SizedBox(height: 15),
@@ -376,17 +497,12 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                     _buildSpeedPresetButton('Max', 100),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  'Simulated: ${_simulatedSpeedKmH.toStringAsFixed(1)} km/h',
-                  style: const TextStyle(color: Colors.white70),
-                )
               ],
             ),
 
             const SizedBox(height: 30),
 
-            // 📊 VEHICLE STATUS
+            // VEHICLE STATUS (UPDATED UI)
             _ControlCard(
               children: [
                 const Text('Vehicle Status',
@@ -394,72 +510,28 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
                         color: Colors.white)),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
 
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color:
-                                _isEngineRunning ? secondaryColor : tertiaryColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Engine Status',
-                                style: TextStyle(
-                                    color: Colors.white70, fontSize: 14)),
-                            Text(
-                              _isEngineRunning ? 'RUNNING' : 'STOPPED',
-                              style: TextStyle(
-                                color: _isEngineRunning
-                                    ? secondaryColor
-                                    : tertiaryColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                    _statusTile(
+                      title: 'Engine',
+                      value: _isEngineRunning ? 'RUNNING' : 'STOPPED',
+                      icon: _isEngineRunning
+                          ? Icons.check_circle
+                          : Icons.cancel,
+                      color: _isEngineRunning
+                          ? secondaryColor
+                          : tertiaryColor,
                     ),
-                    Row(
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            const Text('Battery Level',
-                                style: TextStyle(
-                                    color: Colors.white70, fontSize: 14)),
-                            Text(
-                              '$_batteryLevel%',
-                              style: const TextStyle(
-                                color: secondaryColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.battery_full,
-                            color: secondaryColor, size: 24),
-                      ],
-                    ),
+                    const SizedBox(width: 12),
+                    _batteryTile(),
                   ],
                 ),
 
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 const Divider(color: Colors.white24),
-                const SizedBox(height: 15),
+                const SizedBox(height: 12),
 
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -530,7 +602,6 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
     );
   }
 
-  // زر السرعة المسبقة الإعداد
   Widget _buildSpeedPresetButton(String label, int speedPercentage) {
     return ElevatedButton(
       onPressed: _isConnected

@@ -588,42 +588,97 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
             const SizedBox(height: 40),
 
             Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: primaryColor.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.cloud, color: primaryColor, size: 30),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Firestore Storage',
-                            style: TextStyle(
-                                color: Colors.white, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 4),
-                        StreamBuilder<QuerySnapshot>(
-                          stream: _firestore.collection('recorded_paths').snapshots(),
-                          builder: (context, snapshot) {
-                            int count = snapshot.hasData ? snapshot.data!.docs.length : 0;
-                            return Text('Total saved paths: $count',
-                                style: const TextStyle(color: Colors.white70));
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                      onPressed: _navigateToSavedPaths,
-                      icon: const Icon(Icons.arrow_forward, color: primaryColor)),
-                ],
+  padding: const EdgeInsets.all(20),
+  decoration: BoxDecoration(
+    gradient: LinearGradient(
+      colors: [
+        primaryColor.withOpacity(0.18),
+        primaryColor.withOpacity(0.05),
+      ],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    ),
+    borderRadius: BorderRadius.circular(16),
+    border: Border.all(color: primaryColor.withOpacity(0.4)),
+    boxShadow: [
+      BoxShadow(
+        color: primaryColor.withOpacity(0.25),
+        blurRadius: 12,
+        offset: const Offset(0, 6),
+      ),
+    ],
+  ),
+  child: Row(
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: primaryColor.withOpacity(0.25),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Icon(
+          Icons.cloud_done_rounded,
+          color: primaryColor,
+          size: 34,
+        ),
+      ),
+      const SizedBox(width: 18),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Saved Paths Library',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 6),
+            const Text(
+              'All recorded paths are securely stored in Firestore',
+              style: TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+            const SizedBox(height: 6),
+            StreamBuilder<QuerySnapshot>(
+              stream: _firestore.collection('recorded_paths').snapshots(),
+              builder: (context, snapshot) {
+                final count =
+                    snapshot.hasData ? snapshot.data!.docs.length : 0;
+                return Text(
+                  'Total saved paths: $count',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(width: 10),
+      ElevatedButton(
+        onPressed: _navigateToSavedPaths,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: const Text(
+          'VIEW',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+    ],
+  ),
+),
 
             const Text('RECORDING STATISTICS',
                 style: TextStyle(

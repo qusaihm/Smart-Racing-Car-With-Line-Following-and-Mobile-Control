@@ -14,6 +14,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final passwordController = TextEditingController();
   bool isLoading = false;
 
+  // UI only
+  bool _obscure = true;
+
   Future<void> login() async {
     setState(() => isLoading = true);
     try {
@@ -31,54 +34,204 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  InputDecoration _inputDeco({
+    required String label,
+    required IconData icon,
+    Widget? suffix,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: Colors.white70),
+      prefixIcon: Icon(icon, color: secondaryColor),
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: cardColor,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: secondaryColor, width: 1.6),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.directions_car, size: 100, color: primaryColor),
-              SizedBox(height: 20),
-              Text('SMART LINE FOLLOWER CAR',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: primaryColor)),
-              Text('Intelligent Navigation System', style: TextStyle(fontSize: 16, color: Colors.white70)),
-              SizedBox(height: 40),
-              TextField(
-                  controller: emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    labelText: 'Email Address',
-                    prefixIcon: Icon(Icons.email, color: secondaryColor),
-                    filled: true,
-                  )
-              ),
-              SizedBox(height: 20),
-              TextField(
-                  controller: passwordController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    prefixIcon: Icon(Icons.lock, color: secondaryColor),
-                    suffixIcon: Icon(Icons.visibility_off, color: Colors.white70),
-                    filled: true,
-                  )
-              ),
-              SizedBox(height: 30),
-              ElevatedButton(
-                onPressed: isLoading ? null : login,
-                child: isLoading ? CircularProgressIndicator(color: Colors.white) : Text('Sign In'),
-              ),
-              SizedBox(height: 10),
-              TextButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, '/create');
-                },
-                child: Text('Create Account', style: TextStyle(color: secondaryColor, fontSize: 18)),
-              ),
+      body: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              backgroundColor,
+              backgroundColor.withOpacity(0.92),
+              primaryColor.withOpacity(0.12),
             ],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Logo / Header
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: primaryColor.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: primaryColor.withOpacity(0.25)),
+                      ),
+                      child: Icon(Icons.directions_car, size: 62, color: primaryColor),
+                    ),
+                    const SizedBox(height: 18),
+
+                    Text(
+                      'SMART LINE FOLLOWER CAR',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: primaryColor,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Intelligent Navigation System',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                    ),
+
+                    const SizedBox(height: 22),
+
+                    // Card
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: cardColor.withOpacity(0.95),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: Colors.white.withOpacity(0.10)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text(
+                            'Sign in',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          TextField(
+                            controller: emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: _inputDeco(
+                              label: 'Email Address',
+                              icon: Icons.email,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          TextField(
+                            controller: passwordController,
+                            obscureText: _obscure,
+                            decoration: _inputDeco(
+                              label: 'Password',
+                              icon: Icons.lock,
+                              suffix: IconButton(
+                                onPressed: () => setState(() => _obscure = !_obscure),
+                                icon: Icon(
+                                  _obscure ? Icons.visibility_off : Icons.visibility,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 18),
+
+                          SizedBox(
+                            height: 54,
+                            child: ElevatedButton(
+                              onPressed: isLoading ? null : login,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: secondaryColor,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                elevation: 3,
+                              ),
+                              child: isLoading
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Sign In',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text(
+                                "Don't have an account? ",
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pushNamed(context, '/create');
+                                },
+                                style: TextButton.styleFrom(
+                                  foregroundColor: secondaryColor,
+                                ),
+                                child: const Text(
+                                  'Create Account',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    // Footer hint (optional)
+                    Text(
+                      'Secure access via Firebase Authentication',
+                      style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),

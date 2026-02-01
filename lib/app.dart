@@ -21,7 +21,7 @@ class MyApp extends StatelessWidget {
         '/connect': (context) => const ConnectDeviceScreen(),
         '/settings': (context) => const SettingsScreen(),
       },
-      // ✅ حذفنا onGenerateRoute لأنه مش ضروري وعم يسبب mismatch
+      
     );
   }
 }

@@ -1,7 +1,7 @@
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as status;
 
-/// ✅ Shared connection object (Channel + Broadcast Stream)
+
 class WsConnection {
   final WebSocketChannel channel;
   final Stream<dynamic> stream;
