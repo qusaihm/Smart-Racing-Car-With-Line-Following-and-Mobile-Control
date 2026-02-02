@@ -15,9 +15,16 @@ class PathReconstructor {
   static List<PlotPoint> reconstructFromData({
     required List<Map<String, dynamic>> pathPoints,
     int threshold = 2000,
-    double speedScale = 0.0028,
-    double kTurn = 1.3,
-    double maxTurnRate = 3.2,
+
+    // ✅ Scale واقعي (بدون *10)
+    double speedScale = 0.0030,
+
+    // ✅ دوران أخف + تحكم أكثر
+    double kTurn = 0.9,
+    double maxTurnRate = 2.2,
+
+    // ✅ فلترة لتنعيم الانحراف
+    double alpha = 0.25, // 0.15..0.35
   }) {
     double x = 0, y = 0;
     double heading = -pi / 2; // للأعلى
@@ -25,14 +32,17 @@ class PathReconstructor {
 
     DateTime? lastTime;
 
+    // ✅ آخر انحراف “مؤكد” لما يكون الخط ظاهر
+    double lastGoodError = 0;
+    // ✅ فلتر
+    double errFilt = 0;
+
     for (final p in pathPoints) {
       // ===== Read fields safely =====
-      final String action =
-          (p['action'] ?? 'STOP').toString().toUpperCase();
+      final String action = (p['action'] ?? 'STOP').toString().toUpperCase();
 
-      final int speed = (p['speed'] is int)
-          ? p['speed']
-          : int.tryParse('${p['speed']}') ?? 0;
+      final int speed =
+          (p['speed'] is int) ? p['speed'] : int.tryParse('${p['speed']}') ?? 0;
 
       final String tsStr = (p['timestamp'] ?? '').toString();
       DateTime? t;
@@ -43,7 +53,7 @@ class PathReconstructor {
       double dt = 0.1;
       if (t != null && lastTime != null) {
         dt = (t.difference(lastTime!).inMilliseconds / 1000.0);
-        if (dt <= 0 || dt > 0.8) dt = 0.1;
+        if (dt <= 0 || dt > 0.5) dt = 0.1;
       }
       if (t != null) lastTime = t;
 
@@ -51,50 +61,51 @@ class PathReconstructor {
           (p['sensors'] is List) ? List.from(p['sensors']) : [0, 0, 0, 0, 0];
       if (sensors.length < 5) continue;
 
-      // ===== Sensor interpretation =====
-      final b1 = ((sensors[0] as num).toInt() < threshold) ? 1 : 0;
-      final b2 = ((sensors[1] as num).toInt() < threshold) ? 1 : 0;
-      final b3 = ((sensors[2] as num).toInt() < threshold) ? 1 : 0;
-      final b4 = ((sensors[3] as num).toInt() < threshold) ? 1 : 0;
-      final b5 = ((sensors[4] as num).toInt() < threshold) ? 1 : 0;
-
-      final sum = b1 + b2 + b3 + b4 + b5;
-
-      double error = 0;
-
-      // ===== Lost line handling =====
-      if (sum == 0) {
-        if (action.contains('LEFT')) {
-          error = -2.0;
-        } else if (action.contains('RIGHT')) {
-          error = 2.0;
-        } else {
-          error = 0.0;
-        }
-      } else {
-        // weighted center of line
-        error = (b1 * -2 +
-                b2 * -1 +
-                b3 * 0 +
-                b4 * 1 +
-                b5 * 2) /
-            sum;
+      // ===== Sensor interpretation (Analog weights بدل 0/1) =====
+      double w(int i) {
+        final v = (sensors[i] as num).toDouble().clamp(0, 4095);
+        // 0 = أسود قوي => weight=1
+        // 4095 = أبيض => weight=0
+        final ww = ((threshold - v) / threshold).clamp(0.0, 1.0);
+        return ww;
       }
 
+      final w1 = w(0), w2 = w(1), w3 = w(2), w4 = w(3), w5 = w(4);
+      final sum = w1 + w2 + w3 + w4 + w5;
+
+      double error;
+
+      // ===== Lost line handling (بدون دوائر وهمية) =====
+      if (sum < 0.10) {
+        // فقد خط: خليك على آخر اتجاه معروف بدل ما نفرض LEFT/RIGHT قوي
+        error = lastGoodError;
+      } else {
+        error = (w1 * -2 + w2 * -1 + w3 * 0 + w4 * 1 + w5 * 2) / sum;
+        lastGoodError = error;
+      }
+
+      // ===== Smooth error (فلترة) =====
+      errFilt = errFilt + alpha * (error - errFilt);
+
       // ===== Turning =====
-      double turnRate = kTurn * error;
+      double turnRate = kTurn * errFilt;
       turnRate = turnRate.clamp(-maxTurnRate, maxTurnRate);
+
+      // لو STOP: لا تتحرك
+      if (action.contains('STOP')) {
+        out.add(PlotPoint(x, y));
+        continue;
+      }
 
       heading += turnRate * dt;
 
       // ===== Forward movement =====
-      final step = speed * speedScale * dt * 10;
+      // ✅ حذفنا *10 لأنه كان مكبر المسافات كثير
+      final step = speed * speedScale * dt;
 
-      if (!action.contains('STOP')) {
-        x += cos(heading) * step;
-        y += sin(heading) * step;
-        out.add(PlotPoint(x, y));
-      }
+      x += cos(heading) * step;
+      y += sin(heading) * step;
+      out.add(PlotPoint(x, y));
     }
 
     return out;
