@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'theme.dart';
 
@@ -12,10 +12,45 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
-  bool isLoading = false;
 
-  // UI only
+  bool isLoading = false;
   bool _obscure = true;
+
+  // 🔔 Elegant error message
+  void _showLoginError() {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        duration: const Duration(seconds: 3),
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.redAccent.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: const [
+              Icon(Icons.error_outline, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Invalid email or password.\nPlease try again.',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> login() async {
     setState(() => isLoading = true);
@@ -25,10 +60,8 @@ class _LoginScreenState extends State<LoginScreen> {
         password: passwordController.text.trim(),
       );
       Navigator.pushReplacementNamed(context, '/connect');
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Login failed: $e")),
-      );
+    } catch (_) {
+      _showLoginError();
     } finally {
       setState(() => isLoading = false);
     }
@@ -83,15 +116,20 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Logo / Header
                     Container(
                       padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
                         color: primaryColor.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: primaryColor.withOpacity(0.25)),
+                        border: Border.all(
+                          color: primaryColor.withOpacity(0.25),
+                        ),
                       ),
-                      child: Icon(Icons.directions_car, size: 62, color: primaryColor),
+                      child: Icon(
+                        Icons.directions_car,
+                        size: 62,
+                        color: primaryColor,
+                      ),
                     ),
                     const SizedBox(height: 18),
 
@@ -109,18 +147,22 @@ class _LoginScreenState extends State<LoginScreen> {
                     const Text(
                       'Intelligent Navigation System',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white70,
+                      ),
                     ),
 
                     const SizedBox(height: 22),
 
-                    // Card
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: cardColor.withOpacity(0.95),
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: Colors.white.withOpacity(0.10)),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.10),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -152,9 +194,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               label: 'Password',
                               icon: Icons.lock,
                               suffix: IconButton(
-                                onPressed: () => setState(() => _obscure = !_obscure),
+                                onPressed: () =>
+                                    setState(() => _obscure = !_obscure),
                                 icon: Icon(
-                                  _obscure ? Icons.visibility_off : Icons.visibility,
+                                  _obscure
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
                                   color: Colors.white70,
                                 ),
                               ),
@@ -201,7 +246,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               const Text(
                                 "Don't have an account? ",
-                                style: TextStyle(color: Colors.white70),
+                                style:
+                                    TextStyle(color: Colors.white70),
                               ),
                               TextButton(
                                 onPressed: () {
@@ -212,7 +258,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                                 child: const Text(
                                   'Create Account',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ],
@@ -223,10 +271,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 18),
 
-                    // Footer hint (optional)
                     Text(
                       'Secure access via Firebase Authentication',
-                      style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12),
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.45),
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),

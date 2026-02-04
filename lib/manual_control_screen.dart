@@ -108,16 +108,7 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
         if (!mounted) return;
         setState(() => _isConnected = true);
 
-        if (msg.startsWith("ALERT:WEAK_POWER")) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("⚠ Power issue detected (motor stuttering)\n$msg"),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-          return;
-        }
+        
 
         if (msg.startsWith("SPEED:")) {
           final newSpeed = int.tryParse(msg.substring(6).trim());
