@@ -1,4 +1,4 @@
- import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'dart:async';
 import 'theme.dart';
 import 'ws_connection.dart';
@@ -108,15 +108,15 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
         if (!mounted) return;
         setState(() => _isConnected = true);
 
-        
-
         if (msg.startsWith("SPEED:")) {
           final newSpeed = int.tryParse(msg.substring(6).trim());
           if (newSpeed != null) {
             setState(() {
               _currentSpeed = newSpeed.clamp(0, 255);
-              _currentSpeedPercentage =
-                  ((_currentSpeed / 255) * 100).clamp(0, 100);
+              _currentSpeedPercentage = ((_currentSpeed / 255) * 100).clamp(
+                0,
+                100,
+              );
             });
           }
         } else if (msg.contains("CONNECTED:ESP32_READY")) {
@@ -196,9 +196,10 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 13)),
+                  Text(
+                    title,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
                   const SizedBox(height: 6),
                   Text(
                     value,
@@ -246,9 +247,10 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Battery',
-                          style: TextStyle(
-                              color: Colors.white70, fontSize: 13)),
+                      const Text(
+                        'Battery',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
                       const SizedBox(height: 6),
                       Text(
                         '$_batteryLevel%',
@@ -286,8 +288,10 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Remote Control',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Remote Control',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: backgroundColor,
         actions: [
           IconButton(
@@ -337,20 +341,23 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
             Text(
               'Remote Control',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 30),
 
             // ENGINE CONTROL
             _ControlCard(
               children: [
-                const Text('Engine Control',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: Colors.white)),
+                const Text(
+                  'Engine Control',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: Colors.white,
+                  ),
+                ),
                 const SizedBox(height: 15),
                 ElevatedButton.icon(
                   onPressed: _isConnected
@@ -366,11 +373,14 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                   label: Text(
                     _isEngineRunning ? 'STOP Engine' : 'START Engine',
                     style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold),
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        _isEngineRunning ? tertiaryColor : secondaryColor,
+                    backgroundColor: _isEngineRunning
+                        ? tertiaryColor
+                        : secondaryColor,
                     foregroundColor: Colors.white,
                     minimumSize: const Size(double.infinity, 70),
                     shape: RoundedRectangleBorder(
@@ -401,25 +411,31 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Speed Control',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: Colors.white)),
+                    const Text(
+                      'Speed Control',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: Colors.white,
+                      ),
+                    ),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
                           '${_currentSpeedPercentage.round()}%',
                           style: const TextStyle(
-                              color: primaryColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 20),
+                            color: primaryColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 20,
+                          ),
                         ),
                         Text(
                           '$_currentSpeed/255',
                           style: const TextStyle(
-                              color: Colors.white70, fontSize: 14),
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
                         ),
                       ],
                     ),
@@ -460,21 +476,26 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: const [
-                    Text('0%',
-                        style:
-                            TextStyle(fontSize: 14, color: Colors.white70)),
-                    Text('25%',
-                        style:
-                            TextStyle(fontSize: 14, color: Colors.white70)),
-                    Text('50%',
-                        style:
-                            TextStyle(fontSize: 14, color: Colors.white70)),
-                    Text('75%',
-                        style:
-                            TextStyle(fontSize: 14, color: Colors.white70)),
-                    Text('100%',
-                        style:
-                            TextStyle(fontSize: 14, color: Colors.white70)),
+                    Text(
+                      '0%',
+                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                    ),
+                    Text(
+                      '25%',
+                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                    ),
+                    Text(
+                      '50%',
+                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                    ),
+                    Text(
+                      '75%',
+                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                    ),
+                    Text(
+                      '100%',
+                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 15),
@@ -496,11 +517,14 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
             // VEHICLE STATUS (UPDATED UI)
             _ControlCard(
               children: [
-                const Text('Vehicle Status',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: Colors.white)),
+                const Text(
+                  'Vehicle Status',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: Colors.white,
+                  ),
+                ),
                 const SizedBox(height: 18),
 
                 Row(
@@ -511,9 +535,7 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                       icon: _isEngineRunning
                           ? Icons.check_circle
                           : Icons.cancel,
-                      color: _isEngineRunning
-                          ? secondaryColor
-                          : tertiaryColor,
+                      color: _isEngineRunning ? secondaryColor : tertiaryColor,
                     ),
                     const SizedBox(width: 12),
                     _batteryTile(),
@@ -530,9 +552,10 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Connection',
-                            style: TextStyle(
-                                color: Colors.white70, fontSize: 14)),
+                        const Text(
+                          'Connection',
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
                         Text(
                           _isConnected ? 'ACTIVE' : 'LOST',
                           style: TextStyle(
@@ -545,9 +568,10 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        const Text('Current Speed',
-                            style: TextStyle(
-                                color: Colors.white70, fontSize: 14)),
+                        const Text(
+                          'Current Speed',
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
                         Text(
                           '$_currentSpeed',
                           style: const TextStyle(
@@ -578,10 +602,7 @@ class _ManualControlScreenState extends State<ManualControlScreen> {
                   Expanded(
                     child: Text(
                       'Speed range: 0-255 (PWM values). Higher values = faster movement.',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                      ),
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
                     ),
                   ),
                 ],

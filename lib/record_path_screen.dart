@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
@@ -76,8 +76,7 @@ class _StatisticCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style:
-                        const TextStyle(color: Colors.white70, fontSize: 16)),
+                    style: const TextStyle(color: Colors.white70, fontSize: 16)),
                 const SizedBox(height: 4),
                 Text(
                   value,
@@ -130,6 +129,14 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
   int _recordStartEspMs = 0; // ESP millis at first received DATA
   int _recordStartPhoneMs = 0; // phone ms at first received DATA
   bool _hasStartSync = false;
+
+  // ✅ Fix turns counting (count transitions, not every sample)
+  String _prevActForTurns = 'STOP';
+  bool _isTurnAction(String a) =>
+      a == 'LEFT' || a == 'RIGHT' || a == 'SLIGHT_LEFT' || a == 'SLIGHT_RIGHT';
+
+  // ✅ Prevent duplicate DATA points (espTs monotonic)
+  int _lastEspTsRecorded = 0;
 
   String _formatTime(int seconds) {
     final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
@@ -185,6 +192,10 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
       _recordStartEspMs = 0;
       _recordStartPhoneMs = 0;
       _hasStartSync = false;
+
+      // ✅ reset turns + duplicate protection
+      _prevActForTurns = 'STOP';
+      _lastEspTsRecorded = 0;
     });
 
     try {
@@ -216,7 +227,6 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
     // ✅ Listen to WebSocket messages
     _webSocketSubscription = widget.connection.stream.listen((message) {
       final msg = message.toString();
-      // print('📩 Received: $msg');
 
       if (!_isRecording) return;
 
@@ -228,6 +238,14 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
         final espTs = int.tryParse(fields['ts'] ?? '') ?? 0;
         final act = (fields['act'] ?? 'STOP').trim();
         final spd = int.tryParse(fields['spd'] ?? '') ?? _currentSpeed;
+
+        // ✅ Reject duplicate/out-of-order DATA (prevents spam)
+        if (espTs > 0 && espTs <= _lastEspTsRecorded) {
+          return;
+        }
+        if (espTs > 0) {
+          _lastEspTsRecorded = espTs;
+        }
 
         List<int> sensors = [0, 0, 0, 0, 0];
         final sRaw = fields['s'] ?? '';
@@ -244,7 +262,8 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
           _hasStartSync = true;
           _recordStartEspMs = espTs;
           _recordStartPhoneMs = DateTime.now().millisecondsSinceEpoch;
-          print("✅ DATA sync start | esp=$_recordStartEspMs | phone=$_recordStartPhoneMs");
+          print(
+              "✅ DATA sync start | esp=$_recordStartEspMs | phone=$_recordStartPhoneMs");
         }
 
         final ts = (espTs > 0) ? _espMillisToDateTime(espTs) : DateTime.now();
@@ -252,6 +271,14 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
         // update last known action/speed for UI reference
         _lastAction = act;
         _currentSpeed = spd;
+
+        // ✅ turns: count transition into a turn (not every sample)
+        final wasTurn = _isTurnAction(_prevActForTurns);
+        final isTurn = _isTurnAction(act);
+        if (!wasTurn && isTurn) {
+          _numberOfTurns++;
+        }
+        _prevActForTurns = act;
 
         // ✅ Add point (from DATA only)
         recordedPath.add(PathPoint(
@@ -271,11 +298,6 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
               : 0.0;
 
           _currentStatus = "Recording (${recordedPath.length} points)";
-
-          // ✅ turns: count when action indicates turn
-          if (act == 'LEFT' || act == 'RIGHT' || act == 'SLIGHT_LEFT' || act == 'SLIGHT_RIGHT') {
-            _numberOfTurns++;
-          }
         });
 
         return;
@@ -303,8 +325,6 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
       }
 
       // ❌ Do NOT record from SENSORS anymore (DATA replaced it)
-      // if (msg.startsWith("SENSORS:")) { ... }
-
     }, onError: (e) {
       print("❌ WS listen error: $e");
     }, onDone: () {
@@ -383,7 +403,8 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('✅ Path saved successfully! (${recordedPath.length} points)'),
+          content: Text(
+              '✅ Path saved successfully! (${recordedPath.length} points)'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 4),
         ),
@@ -447,7 +468,8 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Record Path', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Record Path',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: backgroundColor,
         actions: [
           IconButton(
@@ -465,7 +487,9 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: _isRecording ? secondaryColor.withOpacity(0.1) : cardColor,
+                color: _isRecording
+                    ? secondaryColor.withOpacity(0.1)
+                    : cardColor,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                     color: _isRecording ? secondaryColor : Colors.transparent),
@@ -473,7 +497,9 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
               child: Row(
                 children: [
                   Icon(
-                    _isRecording ? Icons.radio_button_checked : Icons.circle_outlined,
+                    _isRecording
+                        ? Icons.radio_button_checked
+                        : Icons.circle_outlined,
                     color: _isRecording ? Colors.green : Colors.grey,
                   ),
                   const SizedBox(width: 12),
@@ -490,12 +516,14 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(_currentStatus,
-                            style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 14)),
                         if (_isRecording && recordedPath.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
                             'Points: ${recordedPath.length} | Speed: $_currentSpeed | Action: $_lastAction',
-                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12),
                           ),
                         ],
                       ],
@@ -510,13 +538,17 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
               width: 200,
               height: 200,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [primaryColor, secondaryColor]),
+                gradient: const LinearGradient(
+                    colors: [primaryColor, secondaryColor]),
                 shape: BoxShape.circle,
                 border: Border.all(
-                    color: _isRecording ? tertiaryColor : primaryColor, width: 4),
+                    color: _isRecording ? tertiaryColor : primaryColor,
+                    width: 4),
                 boxShadow: [
                   BoxShadow(
-                    color: _isRecording ? secondaryColor.withOpacity(0.5) : Colors.transparent,
+                    color: _isRecording
+                        ? secondaryColor.withOpacity(0.5)
+                        : Colors.transparent,
                     blurRadius: 15,
                     spreadRadius: 2,
                   ),
@@ -532,16 +564,20 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                   Text(
                     _isRecording ? 'LIVE' : 'READY',
                     style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18),
                   ),
                   if (_isRecording) ...[
                     const SizedBox(height: 8),
                     Text('$_recordingTimeSeconds s',
-                        style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 16)),
                     if (recordedPath.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text('${recordedPath.length} points',
-                          style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 14)),
                     ],
                   ],
                 ],
@@ -559,8 +595,9 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                     label: const Text('START RECORDING',
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          _isRecording ? Colors.grey.shade800 : secondaryColor,
+                      backgroundColor: _isRecording
+                          ? Colors.grey.shade800
+                          : secondaryColor,
                       padding: const EdgeInsets.symmetric(vertical: 18),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
@@ -575,8 +612,9 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                     label: const Text('STOP & SAVE',
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          _isRecording ? tertiaryColor : Colors.grey.shade800,
+                      backgroundColor: _isRecording
+                          ? tertiaryColor
+                          : Colors.grey.shade800,
                       padding: const EdgeInsets.symmetric(vertical: 18),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
@@ -588,98 +626,102 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
             const SizedBox(height: 40),
 
             Container(
-  padding: const EdgeInsets.all(20),
-  decoration: BoxDecoration(
-    gradient: LinearGradient(
-      colors: [
-        primaryColor.withOpacity(0.18),
-        primaryColor.withOpacity(0.05),
-      ],
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-    ),
-    borderRadius: BorderRadius.circular(16),
-    border: Border.all(color: primaryColor.withOpacity(0.4)),
-    boxShadow: [
-      BoxShadow(
-        color: primaryColor.withOpacity(0.25),
-        blurRadius: 12,
-        offset: const Offset(0, 6),
-      ),
-    ],
-  ),
-  child: Row(
-    crossAxisAlignment: CrossAxisAlignment.center,
-    children: [
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: primaryColor.withOpacity(0.25),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: const Icon(
-          Icons.cloud_done_rounded,
-          color: primaryColor,
-          size: 34,
-        ),
-      ),
-      const SizedBox(width: 18),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Saved Paths Library',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    primaryColor.withOpacity(0.18),
+                    primaryColor.withOpacity(0.05),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: primaryColor.withOpacity(0.4)),
+                boxShadow: [
+                  BoxShadow(
+                    color: primaryColor.withOpacity(0.25),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withOpacity(0.25),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.cloud_done_rounded,
+                      color: primaryColor,
+                      size: 34,
+                    ),
+                  ),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Saved Paths Library',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'All recorded paths are securely stored in Firestore',
+                          style: TextStyle(
+                              color: Colors.white70, fontSize: 14),
+                        ),
+                        const SizedBox(height: 6),
+                        StreamBuilder<QuerySnapshot>(
+                          stream:
+                              _firestore.collection('recorded_paths').snapshots(),
+                          builder: (context, snapshot) {
+                            final count = snapshot.hasData
+                                ? snapshot.data!.docs.length
+                                : 0;
+                            return Text(
+                              'Total saved paths: $count',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: _navigateToSavedPaths,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'VIEW',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 6),
-            const Text(
-              'All recorded paths are securely stored in Firestore',
-              style: TextStyle(color: Colors.white70, fontSize: 14),
-            ),
-            const SizedBox(height: 6),
-            StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('recorded_paths').snapshots(),
-              builder: (context, snapshot) {
-                final count =
-                    snapshot.hasData ? snapshot.data!.docs.length : 0;
-                return Text(
-                  'Total saved paths: $count',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(width: 10),
-      ElevatedButton(
-        onPressed: _navigateToSavedPaths,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: primaryColor,
-          foregroundColor: Colors.white,
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        child: const Text(
-          'VIEW',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-      ),
-    ],
-  ),
-),
 
+            const SizedBox(height: 30),
             const Text('RECORDING STATISTICS',
                 style: TextStyle(
                     color: Colors.white,
@@ -729,7 +771,8 @@ class _RecordPathScreenState extends State<RecordPathScreen> {
                       SizedBox(width: 8),
                       Text('Recording Info',
                           style: TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.bold)),
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
                     ],
                   ),
                   const SizedBox(height: 8),
